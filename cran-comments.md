@@ -1,4 +1,4 @@
-# CRAN submission comments — pecan 0.1.0
+# CRAN submission comments — pecanr 0.1.0
 
 ## Test environments
 

@@ -1,4 +1,4 @@
-Package: pecan
+Package: pecanr
 Title: Partial Eta-Squared for Crossed and Nested Linear Mixed Models
 Version: 0.1.0
 Authors@R: 

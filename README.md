@@ -1,27 +1,30 @@
----
-output: github_document
----
 
 # pecanr
 
 <!-- badges: start -->
-[![CRAN status](https://www.r-pkg.org/badges/version/pecanr)](https://CRAN.R-project.org/package=pecanr)
+
+[![CRAN
+status](https://www.r-pkg.org/badges/version/pecanr)](https://CRAN.R-project.org/package=pecanr)
 [![R-CMD-check](https://github.com/bcohen0901/pecanr/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/bcohen0901/pecanr/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-**pecanr** computes partial eta-squared (eta2p) effect sizes for fixed effects in
-linear mixed models fitted with `lme4`. It correctly handles crossed and nested
-random effects structures -- including random slopes -- using a variance
-decomposition approach that translates slope variances to the outcome scale.
+**pecanr** computes partial eta-squared (eta2p) effect sizes for fixed
+effects in linear mixed models fitted with `lme4`. It correctly handles
+crossed and nested random effects structures – including random slopes –
+using a variance decomposition approach that translates slope variances
+to the outcome scale.
 
 ## Why pecanr?
 
 **pecanr** accounts for:
 
-- **Crossed designs** -- any number of grouping factors (subjects, items, raters, etc.)
-- **Nested designs** -- hierarchical structures with automatic level detection
-- **Random slopes** -- translated to the outcome scale via sigma^2_slope x sigma^2_X
-- **Operative effect sizes** -- excluding variance components that don't
+- **Crossed designs** – any number of grouping factors (subjects, items,
+  raters, etc.)
+- **Nested designs** – hierarchical structures with automatic level
+  detection
+- **Random slopes** – translated to the outcome scale via sigma^2_slope
+  x sigma^2_X
+- **Operative effect sizes** – excluding variance components that don’t
   contribute to the standard error of the tested effect
 
 ## Installation
@@ -96,9 +99,9 @@ eta2p(model, effect = "condition", data = my_data,
 ## References
 
 Correll, J., Mellinger, C., McClelland, G. H., & Judd, C. M. (2020).
-Avoid Cohen's "Small", "Medium", and "Large" for Power Analysis.
-*Trends in Cognitive Sciences*, 24(3), 200-207.
+Avoid Cohen’s “Small”, “Medium”, and “Large” for Power Analysis. *Trends
+in Cognitive Sciences*, 24(3), 200-207.
 
 Rights, J. D., & Sterba, S. K. (2019). Quantifying explained variance in
-multilevel models: An integrative framework for defining R-squared measures.
-*Psychological Methods*, 24(3), 309-338.
+multilevel models: An integrative framework for defining R-squared
+measures. *Psychological Methods*, 24(3), 309-338.

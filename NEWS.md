@@ -1,4 +1,4 @@
-#  pecan 0.1.0
+#  pecanr 0.1.0
 
 * Initial CRAN release.
 * `eta2p()` computes partial eta-squared for a single fixed effect in a fitted
