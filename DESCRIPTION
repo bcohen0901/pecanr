@@ -1,0 +1,23 @@
+Package: pecan
+Title: Partial Eta-Squared for Crossed and Nested Linear Mixed Models
+Version: 0.1.0
+Authors@R: 
+    person("Brandon", "Cohen", , "brandon.cohen-1@colorado.edu", role = c("aut", "cre"),
+           comment = c(ORCID = "0009-0004-1802-3435"))
+Description: Computes partial eta-squared effect sizes for fixed effects in
+    linear mixed models fitted with lme4. Supports crossed and nested random
+    effects structures with any number of grouping factors. Random slope
+    variances are translated to the outcome scale using a variance decomposition
+    approach, correctly accounting for predictor scaling and interaction terms.
+    Both general and operative effect sizes are provided.
+License: MIT + file LICENSE
+URL: https://github.com/bcohen0901/pecan
+BugReports: https://github.com/bcohen0901/pecan/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    lme4
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
