@@ -1,10 +1,12 @@
 Package: pecanr
 Title: Partial Eta-Squared for Crossed and Nested Linear Mixed Models
 Version: 0.1.0
-Authors@R: 
-    person("Brandon", "Cohen", , "brandon.cohen-1@colorado.edu", role = c("aut", "cre"),
+Authors@R: c(
+    person("Brandon", "Cohen", email = "brandon.cohen-1@colorado.edu",
+           role = c("aut", "cre"),
            comment = c(ORCID = "0009-0004-1802-3435")),
-           person("Joshua", "Correll", , "joshua.correll@colorado.edu", role = c("aut", "ths"),
+    person("Joshua", "Correll", email = "joshua.correll@colorado.edu",
+           role = c("aut", "ths"),
            comment = c(ORCID = "0000-0003-1142-459X")))
 Description: Computes partial eta-squared effect sizes for fixed effects in
     linear mixed models fitted with lme4. Supports crossed and nested random
