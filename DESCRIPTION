@@ -1,6 +1,6 @@
 Package: pecanr
 Title: Partial Eta-Squared for Crossed and Nested Linear Mixed Models
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: c(
     person("Brandon", "Cohen", email = "brandon.cohen-1@colorado.edu",
            role = c("aut", "cre"),
