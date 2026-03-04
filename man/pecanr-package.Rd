@@ -6,7 +6,7 @@
 \alias{pecanr-package}
 \title{pecanr: Partial Eta-Squared for Crossed and Nested Linear Mixed Models}
 \description{
-Computes partial eta-squared effect sizes for fixed effects in linear mixed models fitted with lme4 package. Supports crossed and nested random effects structures with any number of grouping factors. Random slope variances are translated to the outcome scale using a variance decomposition approach, correctly accounting for predictor scaling and interaction terms. Both general and operative effect sizes are provided.
+Computes partial eta-squared effect sizes for fixed effects in linear mixed models fitted with the 'lme4' package. Supports crossed and nested random effects structures with any number of grouping factors. Random slope variances are translated to the outcome scale using a variance decomposition approach, correctly accounting for predictor scaling and interaction terms. Both general and operative effect sizes are provided. Methods are based on Correll, Mellinger, McClelland, and Judd (2020) \doi{10.1016/j.tics.2019.12.009}, Correll, Mellinger, and Pedersen (2022) \doi{10.3758/s13428-021-01687-2}, and Rights and Sterba (2019) \doi{10.1037/met0000184}.
 }
 \seealso{
 Useful links:

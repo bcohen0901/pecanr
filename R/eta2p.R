@@ -64,35 +64,57 @@
 #' Correll, J., Mellinger, C., McClelland, G. H., & Judd, C. M. (2020).
 #' Avoid Cohen's 'Small', 'Medium', and 'Large' for Power Analysis.
 #' \emph{Trends in Cognitive Sciences}, 24(3), 200-207.
+#' \doi{10.1016/j.tics.2019.12.009}
+#'
+#' Correll, J., Mellinger, C., & Pedersen, E. J. (2022). Flexible approaches
+#' for estimating partial eta squared in mixed-effects models with crossed
+#' random factors. \emph{Behavior Research Methods}, 54, 1626-1642.
+#' \doi{10.3758/s13428-021-01687-2}
 #'
 #' Rights, J. D., & Sterba, S. K. (2019). Quantifying explained variance in
 #' multilevel models: An integrative framework for defining R-squared measures.
 #' \emph{Psychological Methods}, 24(3), 309-338.
+#' \doi{10.1037/met0000184}
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' library(lme4)
 #'
-#' # Two crossed factors (backward-compatible call)
+#' # --- Two crossed factors (backward-compatible call) ---
+#' set.seed(42)
+#' crossed_data <- data.frame(
+#'   y         = rnorm(120),
+#'   condition = rep(c(-0.5, 0.5), 60),
+#'   subject   = factor(rep(1:20, each = 6)),
+#'   item      = factor(rep(1:6, 20))
+#' )
 #' model <- lmer(y ~ condition + (1 | subject) + (1 | item),
 #'               data = crossed_data)
 #' eta2p(model, "condition", crossed_data,
-#'       design = "crossed",
+#'       design   = "crossed",
 #'       subj_var = "subject",
 #'       item_var = "item")
 #'
-#' # Three crossed factors using cross_vars
+#' # --- Three crossed factors using cross_vars ---
+#' set.seed(42)
+#' three_way_data <- data.frame(
+#'   y         = rnorm(180),
+#'   condition = rep(c(-0.5, 0.5), 90),
+#'   subject   = factor(rep(1:20, each = 9)),
+#'   item      = factor(rep(rep(1:6, each = 3), 10)),
+#'   rater     = factor(rep(1:3, 60))
+#' )
 #' model3 <- lmer(y ~ condition + (1 | subject) + (1 | item) + (1 | rater),
-#'               data = three_way_data)
+#'                data = three_way_data)
 #' eta2p(model3, "condition", three_way_data,
-#'       design = "crossed",
+#'       design     = "crossed",
 #'       cross_vars = c("subject", "item", "rater"))
 #'
-#' # Supply predictor variance directly (no raw data needed for this step)
+#' # --- Supply predictor variance directly (var_x) ---
 #' eta2p(model, "condition", crossed_data,
-#'       design = "crossed",
+#'       design     = "crossed",
 #'       cross_vars = c("subject", "item"),
-#'       var_x = 1)   # +/-1 binary predictor
+#'       var_x      = 1)   # +/-1 binary predictor: var = 1 by design
 #' }
 #'
 #' @export
