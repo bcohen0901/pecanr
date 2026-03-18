@@ -10,9 +10,9 @@ status](https://www.r-pkg.org/badges/version/pecanr)](https://CRAN.R-project.org
 
 **pecanr** computes partial eta-squared (eta2p) effect sizes for fixed
 effects in linear mixed models fitted with `lme4`. It correctly handles
-crossed and nested random effects structures – including random slopes –
-using a variance decomposition approach that translates slope variances
-to the outcome scale.
+crossed, nested, and mixed (crossed-and-nested) random effects
+structures – including random slopes – using a variance decomposition
+approach that translates slope variances to the outcome scale.
 
 ## Why pecanr?
 
@@ -22,6 +22,9 @@ to the outcome scale.
   raters, etc.)
 - **Nested designs** – hierarchical structures with automatic level
   detection
+- **Mixed designs** – grouping factors that are simultaneously nested
+  within some variables and crossed with others (e.g., photos nested
+  within models, but both crossed with participants)
 - **Random slopes** – translated to the outcome scale via sigma^2_slope
   x sigma^2_X
 - **Operative effect sizes** – excluding variance components that don’t
@@ -52,7 +55,6 @@ library(lme4)
 library(pecanr)
 
 model <- lmer(y ~ condition + (1 | subject) + (1 | item), data = my_data)
-
 eta2p(model, effect = "condition", data = my_data,
       design     = "crossed",
       cross_vars = c("subject", "item"))
@@ -63,7 +65,6 @@ eta2p(model, effect = "condition", data = my_data,
 ``` r
 model3 <- lmer(y ~ condition + (1 | subject) + (1 | item) + (1 | rater),
                data = my_data)
-
 eta2p(model3, effect = "condition", data = my_data,
       design     = "crossed",
       cross_vars = c("subject", "item", "rater"))
@@ -73,10 +74,25 @@ eta2p(model3, effect = "condition", data = my_data,
 
 ``` r
 model_nested <- lmer(y ~ treatment + (1 | school/class), data = my_data)
-
 eta2p(model_nested, effect = "treatment", data = my_data,
       design    = "nested",
       nest_vars = c("class", "school"))
+```
+
+### Mixed design (nested-and-crossed)
+
+Use `design = "mixed"` when some grouping factors are nested within
+others but all levels are crossed with additional factors. A common
+example is participants viewing multiple photos of each model: photos
+are nested within models, but both levels are crossed with participants.
+
+``` r
+model_mixed <- lmer(y ~ x + (1 | participant) + (1 | model) + (1 | photo:model),
+                    data = my_data)
+eta2p(model_mixed, effect = "x", data = my_data,
+      design     = "mixed",
+      cross_vars = "participant",
+      nest_vars  = c("photo", "model"))
 ```
 
 ### Batch over all effects
@@ -101,6 +117,10 @@ eta2p(model, effect = "condition", data = my_data,
 Correll, J., Mellinger, C., McClelland, G. H., & Judd, C. M. (2020).
 Avoid Cohen’s “Small”, “Medium”, and “Large” for Power Analysis. *Trends
 in Cognitive Sciences*, 24(3), 200-207.
+
+Correll, J., Mellinger, C., & Pedersen, E. J. (2022). Flexible
+approaches for estimating partial eta squared in mixed-effects models
+with crossed random factors. *Behavior Research Methods*, 54, 1626-1642.
 
 Rights, J. D., & Sterba, S. K. (2019). Quantifying explained variance in
 multilevel models: An integrative framework for defining R-squared
