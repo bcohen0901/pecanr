@@ -8,7 +8,7 @@ eta2p(
   model,
   effect,
   data,
-  design = c("crossed", "nested"),
+  design = c("crossed", "nested", "mixed"),
   subj_var = NULL,
   item_var = NULL,
   cross_vars = NULL,
@@ -27,7 +27,10 @@ Must match a name in \code{fixef(model)}.}
 
 \item{data}{Data frame used to fit the model.}
 
-\item{design}{Character string: either \code{"crossed"} or \code{"nested"}.}
+\item{design}{Character string: \code{"crossed"}, \code{"nested"}, or
+\code{"mixed"}. Use \code{"mixed"} when the model contains both crossed and
+nested random effects (e.g., photos nested within models, but both crossed
+with participants).}
 
 \item{subj_var}{Character string specifying the subject/participant grouping
 variable. Retained for backward compatibility; prefer \code{cross_vars}.}
@@ -35,15 +38,19 @@ variable. Retained for backward compatibility; prefer \code{cross_vars}.}
 \item{item_var}{Character string specifying the item/stimulus grouping
 variable. Retained for backward compatibility; prefer \code{cross_vars}.}
 
-\item{cross_vars}{Character vector of ALL crossed grouping variable names
-(e.g., \code{c("subject", "item", "rater")}). Supersedes \code{subj_var}
-and \code{item_var} when provided. Supports any number of crossed factors.}
+\item{cross_vars}{Character vector of grouping variable names that are
+\emph{crossed} with each other and with the nested hierarchy
+(e.g., \code{c("participant")} or \code{c("participant", "rater")}).
+Supersedes \code{subj_var} and \code{item_var} when provided.}
 
-\item{nest_vars}{Character vector specifying nesting variables from lowest to
-highest level (required for nested designs).}
+\item{nest_vars}{Character vector of nesting variables ordered from lowest
+to highest level (e.g., \code{c("photo", "model")} when photos are nested
+within models). Required for \code{design = "nested"} or
+\code{design = "mixed"}.}
 
 \item{effect_level}{Character string specifying the level at which the effect
-varies (e.g., "L1", "L2"). If NULL, will be detected automatically.}
+varies (e.g., \code{"L1"}, \code{"L2"}). If \code{NULL}, detected
+automatically from \code{nest_vars}.}
 
 \item{var_x}{Optional numeric. Pre-computed variance of the predictor (or
 interaction product). If supplied, overrides the internal \code{var()}
@@ -51,47 +58,90 @@ calculation from \code{data}. Useful when raw data are unavailable but the
 predictor variance is known (e.g., from design: a +/-1 binary predictor has
 \code{var_x = 1}).}
 
-\item{operative}{Logical. If TRUE, calculates operative effect size (excludes
-variance components that don't contribute to SE). Default is FALSE.}
+\item{operative}{Logical. If \code{TRUE}, calculates operative effect size
+(excludes variance components that do not contribute to the SE of the
+effect). Default is \code{FALSE}.}
 
-\item{verbose}{Logical. If TRUE, prints detailed results. Default is TRUE.}
+\item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
+\code{TRUE}.}
 }
 \value{
 An object of class \code{"eta2p_lmm"} containing:
-\item{eta2p}{Partial eta-squared value}
-\item{variance_effect}{Variance explained by the effect}
-\item{variance_error}{Error variance}
-\item{effect}{Name of the effect}
-\item{design}{Design type ("crossed" or "nested")}
-\item{operative}{Whether operative effect size was calculated}
-\item{variance_components}{List of individual variance components}
-\item{...}{Additional design-specific information}
+\item{eta2p}{Partial eta-squared value.}
+\item{variance_effect}{Variance explained by the effect.}
+\item{variance_error}{Error variance (denominator).}
+\item{effect}{Name of the effect.}
+\item{design}{Design type: \code{"crossed"}, \code{"nested"}, or
+\code{"mixed"}.}
+\item{operative}{Whether operative effect size was calculated.}
+\item{variance_components}{List of individual variance components. For
+\code{"mixed"} designs this is a list with \code{$crossed} and
+\code{$nested} sub-lists.}
+\item{within_between}{(Mixed/crossed designs) Named list or vector
+classifying each grouping factor as \code{"within"} or \code{"between"}
+with respect to the focal effect. Only populated when
+\code{operative = TRUE}.}
+\item{cross_vars}{(Crossed/mixed designs) Crossed grouping variable names.}
+\item{nest_vars}{(Nested/mixed designs) Nested grouping variable names.}
+\item{n_per_factor}{(Crossed designs) Number of units per crossed factor.}
+\item{n_cross}{(Mixed designs) Number of units per crossed factor.}
+\item{n_nested}{(Mixed designs) Number of units per nested factor.}
+\item{n_levels}{(Nested designs) Number of units per nested level.}
+\item{effect_level}{(Nested/mixed designs) Detected or supplied effect
+level.}
 }
 \description{
 Calculates partial eta-squared effect sizes for fixed effects in linear mixed
-models with crossed or nested random effects.
+models with crossed, nested, or mixed (crossed-and-nested) random effects.
 }
 \details{
-The function implements a variance decomposition approach for computing partial
-eta-squared in mixed models. Random slope variances are translated to the
-outcome scale using the formula:
-\deqn{\sigma^2_{slope}(Y) = \sigma^2_b \times \sigma^2_X}
+\subsection{Variance decomposition}{
+The function implements a variance decomposition approach for computing
+partial eta-squared in mixed models. Random slope variances are translated
+to the outcome scale using:
+\deqn{\sigma^2_{\text{slope}}(Y) = \sigma^2_b \times \sigma^2_X}
+For interaction effects, \eqn{\sigma^2_X} is computed as the variance of
+the actual product term, correctly accounting for centering, scaling, and
+predictor correlation. The \code{var_x} argument allows bypassing this
+computation when the variance is known a priori.
+}
 
-For interaction effects, the variance of the predictor is calculated as
-the variance of the actual product term (e.g., var(X1 * X2)), not the
-product of individual variances. This correctly accounts for centering,
-scaling, and correlation between predictors. The \code{var_x} argument
-allows bypassing this computation when the variance is known a priori.
+\subsection{General vs. operative effect sizes}{
+For \strong{general effect sizes} (default), all variance components appear
+in the denominator. For \strong{operative effect sizes}
+(\code{operative = TRUE}), only components that contribute to the standard
+error of the effect are included. In mixed designs, each grouping factor
+(both crossed and nested) is independently classified as
+\code{"within"} or \code{"between"} the focal effect; between-subjects
+intercept variances are excluded from the operative denominator.
+}
 
-For \strong{general effect sizes} (default), all variance components are
-included in the denominator. For \strong{operative effect sizes}
-(\code{operative = TRUE}), only variance components that contribute to the
-standard error of the effect are included.
+\subsection{Mixed designs}{
+Use \code{design = "mixed"} when the model contains both crossed and nested
+random effects simultaneously. A canonical example is participants viewing
+multiple photos of each model (stimulus): photos are nested within models,
+but both levels are crossed with participants.
 
-Crossed designs support any number of grouping factors via \code{cross_vars}.
-The two-argument form (\code{subj_var} + \code{item_var}) is retained for
+The corresponding \pkg{lme4} model and \code{eta2p} call would be:
+\preformatted{
+fit <- lmer(y ~ x + (1 | participant) + (1 | model) + (1 | photo:model),
+            data = dat)
+eta2p(fit, "x", dat,
+      design     = "mixed",
+      cross_vars = "participant",
+      nest_vars  = c("photo", "model"))
+}
+Residual variance is attributed to the crossed side and counted exactly
+once; the nested calculator's residual is subtracted to prevent
+double-counting.
+}
+
+\subsection{Crossed designs}{
+Supports any number of grouping factors via \code{cross_vars}. The
+two-argument form (\code{subj_var} + \code{item_var}) is retained for
 backward compatibility and is equivalent to
 \code{cross_vars = c(subj_var, item_var)}.
+}
 }
 \examples{
 \donttest{
@@ -105,9 +155,9 @@ crossed_data <- data.frame(
   subject   = factor(rep(1:20, each = 6)),
   item      = factor(rep(1:6, 20))
 )
-model <- lmer(y ~ condition + (1 | subject) + (1 | item),
-              data = crossed_data)
-eta2p(model, "condition", crossed_data,
+model_c <- lmer(y ~ condition + (1 | subject) + (1 | item),
+                data = crossed_data)
+eta2p(model_c, "condition", crossed_data,
       design   = "crossed",
       subj_var = "subject",
       item_var = "item")
@@ -121,14 +171,41 @@ three_way_data <- data.frame(
   item      = factor(rep(rep(1:6, each = 3), 10)),
   rater     = factor(rep(1:3, 60))
 )
-model3 <- lmer(y ~ condition + (1 | subject) + (1 | item) + (1 | rater),
-               data = three_way_data)
-eta2p(model3, "condition", three_way_data,
+model_3 <- lmer(y ~ condition +
+                  (1 | subject) + (1 | item) + (1 | rater),
+                data = three_way_data)
+eta2p(model_3, "condition", three_way_data,
       design     = "crossed",
       cross_vars = c("subject", "item", "rater"))
 
+# --- Mixed design: photos nested within models, crossed with participants ---
+# Participants each view multiple photos of multiple models.
+# Photos are nested within models (each photo belongs to one model),
+# but both levels are crossed with participants.
+set.seed(42)
+n_subj  <- 30; n_model <- 10; n_photo <- 3
+mixed_data <- expand.grid(
+  participant = factor(seq_len(n_subj)),
+  photo_id    = factor(seq_len(n_model * n_photo))
+)
+mixed_data$model_id <- factor(
+  rep(seq_len(n_model), each = n_photo)[as.integer(mixed_data$photo_id)]
+)
+mixed_data$x <- rnorm(nrow(mixed_data))
+mixed_data$y <- rnorm(nrow(mixed_data))
+
+model_m <- lmer(y ~ x +
+                  (1 | participant) +
+                  (1 | model_id) +
+                  (1 | photo_id:model_id),
+                data = mixed_data)
+eta2p(model_m, "x", mixed_data,
+      design     = "mixed",
+      cross_vars = "participant",
+      nest_vars  = c("photo_id", "model_id"))
+
 # --- Supply predictor variance directly (var_x) ---
-eta2p(model, "condition", crossed_data,
+eta2p(model_c, "condition", crossed_data,
       design     = "crossed",
       cross_vars = c("subject", "item"),
       var_x      = 1)   # +/-1 binary predictor: var = 1 by design
@@ -138,16 +215,16 @@ eta2p(model, "condition", crossed_data,
 \references{
 Correll, J., Mellinger, C., McClelland, G. H., & Judd, C. M. (2020).
 Avoid Cohen's 'Small', 'Medium', and 'Large' for Power Analysis.
-\emph{Trends in Cognitive Sciences}, 24(3), 200-207.
+\emph{Trends in Cognitive Sciences}, 24(3), 200--207.
 \doi{10.1016/j.tics.2019.12.009}
 
 Correll, J., Mellinger, C., & Pedersen, E. J. (2022). Flexible approaches
 for estimating partial eta squared in mixed-effects models with crossed
-random factors. \emph{Behavior Research Methods}, 54, 1626-1642.
+random factors. \emph{Behavior Research Methods}, 54, 1626--1642.
 \doi{10.3758/s13428-021-01687-2}
 
 Rights, J. D., & Sterba, S. K. (2019). Quantifying explained variance in
 multilevel models: An integrative framework for defining R-squared measures.
-\emph{Psychological Methods}, 24(3), 309-338.
+\emph{Psychological Methods}, 24(3), 309--338.
 \doi{10.1037/met0000184}
 }

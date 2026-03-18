@@ -7,7 +7,7 @@
 batch_eta2p(
   model,
   data,
-  design = c("crossed", "nested"),
+  design = c("crossed", "nested", "mixed"),
   subj_var = NULL,
   item_var = NULL,
   cross_vars = NULL,
@@ -21,7 +21,10 @@ batch_eta2p(
 
 \item{data}{Data frame used to fit the model.}
 
-\item{design}{Character string: either \code{"crossed"} or \code{"nested"}.}
+\item{design}{Character string: \code{"crossed"}, \code{"nested"}, or
+\code{"mixed"}. Use \code{"mixed"} when the model contains both crossed and
+nested random effects (e.g., photos nested within models, but both crossed
+with participants).}
 
 \item{subj_var}{Character string specifying the subject/participant grouping
 variable. Retained for backward compatibility; prefer \code{cross_vars}.}
@@ -29,22 +32,37 @@ variable. Retained for backward compatibility; prefer \code{cross_vars}.}
 \item{item_var}{Character string specifying the item/stimulus grouping
 variable. Retained for backward compatibility; prefer \code{cross_vars}.}
 
-\item{cross_vars}{Character vector of ALL crossed grouping variable names
-(e.g., \code{c("subject", "item", "rater")}). Supersedes \code{subj_var}
-and \code{item_var} when provided. Supports any number of crossed factors.}
+\item{cross_vars}{Character vector of grouping variable names that are
+\emph{crossed} with each other and with the nested hierarchy
+(e.g., \code{c("participant")} or \code{c("participant", "rater")}).
+Supersedes \code{subj_var} and \code{item_var} when provided.}
 
-\item{nest_vars}{Character vector specifying nesting variables from lowest to
-highest level (required for nested designs).}
+\item{nest_vars}{Character vector of nesting variables ordered from lowest
+to highest level (e.g., \code{c("photo", "model")} when photos are nested
+within models). Required for \code{design = "nested"} or
+\code{design = "mixed"}.}
 
-\item{operative}{Logical. If TRUE, calculates operative effect size (excludes
-variance components that don't contribute to SE). Default is FALSE.}
+\item{operative}{Logical. If \code{TRUE}, calculates operative effect size
+(excludes variance components that do not contribute to the SE of the
+effect). Default is \code{FALSE}.}
 
-\item{verbose}{Logical. If TRUE, prints detailed results. Default is TRUE.}
+\item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
+\code{TRUE}.}
 }
 \value{
-A data frame with one row per effect containing eta-squared values
-and variance components.
+A data frame with one row per effect containing:
+\item{effect}{Name of the fixed effect.}
+\item{eta2p}{Partial eta-squared value.}
+\item{effect_level}{Effect level (nested/mixed designs only).}
+\item{variance_effect}{Variance attributed to the effect.}
+\item{variance_error}{Error variance used in the denominator.}
+\item{type}{\code{"general"} or \code{"operative"}.}
+\item{within_subj, within_item}{(Crossed/mixed, operative only) Whether the
+effect is within subjects / within items.}
+
+Rows are sorted by \code{eta2p} in decreasing order.
 }
 \description{
-Calculates partial eta-squared for all fixed effects in a model.
+Calculates partial eta-squared for all fixed effects (excluding the
+intercept) in a model.
 }
