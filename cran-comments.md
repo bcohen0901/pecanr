@@ -1,37 +1,42 @@
-# CRAN submission comments -- pecanr 0.2.0
+# CRAN submission comments -- pecanr 0.3.0
 
 ## Test environments
 * Local: macOS [VERSION], R 4.5.0 (aarch64-apple-darwin20)
-* devtools::check_win_devel(): Windows Server, R-devel -- 0 errors, 0 warnings, 1 note
+* devtools::check_win_devel(): Windows Server, R-devel -- 0 errors, 0 warnings, 0 note
 * rhub::rhub_check(): linux (ubuntu-latest) -- 0 errors, 0 warnings, 0 notes
 * rhub::rhub_check(): windows (windows-latest) -- 0 errors, 0 warnings, 0 notes
 * rhub::rhub_check(): atlas (Fedora Linux) -- 0 errors, 0 warnings, 0 notes
 
 ## R CMD CHECK results
-0 errors | 0 warnings | 1 note
-
-## Notes
-* "unable to verify current time" -- this is a system-level network issue on the
-  test machine and is unrelated to the package. It appears consistently across
-  all platforms and cannot be resolved by the package author.
-
+0 errors | 0 warnings | 0 notes
+ 
 ## Changes since last submission
-* Added `design = "mixed"` to `eta2p()` and `batch_eta2p()` for models with
-  both crossed and nested random effects simultaneously (e.g., photos nested
-  within models, crossed with participants). Includes a new internal helper
-  `calc_error_mixed()` and `detect_within_between_mixed()`.
-* Fixed bug in operative effect size calculation for crossed designs: 
-  `detect_within_between()` previously used hardcoded `$subj`/`$item` keys
-  which caused intercept variances to be silently omitted from the operative
-  denominator. Keys are now indexed by actual variable name.
-* Changed behavior for operative effect sizes with 3+ crossed factors: 
-  third and higher factors are now correctly gated on within/between status
-  rather than always being included. This is a minor breaking change for
-  users with 3+ crossed factors using `operative = TRUE`.
-* `batch_eta2p()` output columns for within/between status are now named
-  `within_<varname>` (e.g., `within_participant`, `within_item`) rather than
-  the hardcoded `within_subj`/`within_item`. This is a minor breaking change
-  for code that references those columns by name.
+* New function `eta2p_omnibus()` computes a single factor-level partial
+  eta-squared for a multi-level factor or multi-df interaction, corresponding
+  to the omnibus (multi-df) test of that effect rather than to individual
+  contrasts.
+* `eta2p()` and `batch_eta2p()` now accept factor predictors directly (by
+  variable name or coefficient name), reading predictor variances and factor
+  random slopes from the model design matrix and model frame; manual recoding
+  of factors to numeric is no longer required.
+* `eta2p()` gains an optional parametric-bootstrap confidence interval
+  (`ci = TRUE`, with `ci_level`, `n_boot`, and `seed` arguments) via
+  `lme4::bootMer()`.
+* Interaction effect sizes are now computed from the mean-centered constituent
+  predictors, making the interaction effect size invariant to the location of
+  its constituent predictors. For models with uncentered continuous
+  interaction components, interaction effect sizes may differ from those
+  produced by earlier versions.
+* The default for `verbose` in `eta2p()` is now `FALSE`, matching
+  `batch_eta2p()`.
+* Fixed a bug in which operative effect sizes (`operative = TRUE`) could
+  misclassify factor grouping variables as within/between, because the focal
+  effect's coefficient name (e.g. `"Age75"`) was matched directly against data
+  columns; coefficient names are now resolved to their underlying variable
+  before classification.
+* Fixed a bug in which the random slope of an interaction term (e.g. a random
+  slope on `x1:x2`) was silently omitted from the error denominator when its
+  random-effect name did not match the fixed-effect product column.
 
 ## Downstream dependencies
-This is a new package. There are no existing downstream dependencies.
+There are no downstream dependencies.

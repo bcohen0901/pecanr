@@ -6,3 +6,5 @@
 ^\.github$
 ^\.gitignore$
 ^CRAN-SUBMISSION$
+^\.positai$
+^\.claude$

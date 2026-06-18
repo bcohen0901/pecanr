@@ -5,7 +5,15 @@
 #'
 #' @param model A fitted model object from \code{lme4::lmer()}.
 #' @param effect Character string specifying the fixed effect to analyze.
-#'   Must match a name in \code{fixef(model)}.
+#'   May be given either as the model coefficient name (e.g.
+#'   \code{"Group75yr"}) or as the underlying variable name (e.g.
+#'   \code{"Group"}); a variable name that maps to a single coefficient is
+#'   resolved automatically (with a message). A variable that maps to several
+#'   coefficients (a multi-level factor) raises an informative error pointing to
+#'   \code{eta2p_omnibus()} (for one factor-level value) or
+#'   \code{batch_eta2p()} (for per-coefficient values). Factor predictors and
+#'   factor random slopes are read from the model design matrix / model frame,
+#'   so no manual recoding to numeric is required.
 #' @param data Data frame used to fit the model.
 #' @param design Character string: \code{"crossed"}, \code{"nested"}, or
 #'   \code{"mixed"}. Use \code{"mixed"} when the model contains both crossed and
@@ -34,8 +42,22 @@
 #' @param operative Logical. If \code{TRUE}, calculates operative effect size
 #'   (excludes variance components that do not contribute to the SE of the
 #'   effect). Default is \code{FALSE}.
+#' @param ci Logical. If \code{TRUE}, computes a confidence interval for
+#'   \code{eta2p} by parametric bootstrap (\code{lme4::bootMer}): new responses
+#'   are simulated from the fitted model, the model is refit, and \code{eta2p}
+#'   is recomputed on each replicate, with percentile limits taken from the
+#'   resulting distribution. This is the appropriate interval for a ratio of
+#'   REML variance components, which has no closed-form sampling distribution.
+#'   Each replicate refits the model, so this is opt-in and can be slow on large
+#'   models. Default is \code{FALSE}.
+#' @param ci_level Numeric confidence level for the bootstrap interval (default
+#'   \code{0.95}).
+#' @param n_boot Integer number of bootstrap replicates when \code{ci = TRUE}
+#'   (default \code{1000}). Use a smaller value (e.g. 100-200) to gauge runtime
+#'   on large models before committing to the full count.
+#' @param seed Optional integer seed for reproducible bootstrap intervals.
 #' @param verbose Logical. If \code{TRUE}, prints detailed results. Default is
-#'   \code{TRUE}.
+#'   \code{FALSE}.
 #'
 #' @return An object of class \code{"eta2p_lmm"} containing:
 #' \item{eta2p}{Partial eta-squared value.}
@@ -45,6 +67,10 @@
 #' \item{design}{Design type: \code{"crossed"}, \code{"nested"}, or
 #'   \code{"mixed"}.}
 #' \item{operative}{Whether operative effect size was calculated.}
+#' \item{ci_level, ci_lower, ci_upper, boot_n, boot_method}{(Only when
+#'   \code{ci = TRUE}) The confidence level, the lower and upper percentile
+#'   bootstrap limits, the number of usable bootstrap replicates, and the
+#'   method label (\code{"parametric (bootMer)"}).}
 #' \item{variance_components}{List of individual variance components. For
 #'   \code{"mixed"} designs this is a list with \code{$crossed} and
 #'   \code{$nested} sub-lists.}
@@ -64,13 +90,54 @@
 #' @details
 #' \subsection{Variance decomposition}{
 #' The function implements a variance decomposition approach for computing
-#' partial eta-squared in mixed models. Random slope variances are translated
-#' to the outcome scale using:
-#' \deqn{\sigma^2_{\text{slope}}(Y) = \sigma^2_b \times \sigma^2_X}
-#' For interaction effects, \eqn{\sigma^2_X} is computed as the variance of
-#' the actual product term, correctly accounting for centering, scaling, and
-#' predictor correlation. The \code{var_x} argument allows bypassing this
-#' computation when the variance is known a priori.
+#' partial eta-squared in mixed models. The variance a fixed effect explains is
+#' \deqn{\mathrm{Var}_{\text{explained}} = b^2 \times \sigma^2_X,}
+#' where \eqn{b} is the (partial) fixed-effect coefficient and \eqn{\sigma^2_X}
+#' is the variance of the predictor column. Random slope variances are
+#' translated to the outcome scale by the same principle,
+#' \deqn{\sigma^2_{\text{slope}}(Y) = \sigma^2_b \times \sigma^2_X.}
+#' For an interaction, \eqn{\sigma^2_X} is the variance of the product of the
+#' \emph{mean-centered} constituent predictors (see "Centering" below). The
+#' \code{var_x} argument bypasses this computation when the variance is known a
+#' priori.
+#' }
+#'
+#' \subsection{Centering and intended scope}{
+#' These quantities are exact when predictors are \strong{mean-centered}, which
+#' is standard and recommended practice for the experimental and contrast-coded
+#' designs the method primarily targets (sum/contrast coding centers factors
+#' automatically). Two points:
+#' \itemize{
+#'   \item \strong{Interactions: components are centered automatically.} For an
+#'     interaction the function mean-centers each \emph{constituent} predictor
+#'     and then takes the variance of their product (it does \emph{not} center
+#'     the product itself). This makes the interaction effect size invariant to
+#'     the location of the constituents: re-centering a predictor by a constant
+#'     leaves the model fit and the interaction coefficient unchanged, and now
+#'     also leaves the effect size unchanged. (The variance of the \emph{raw}
+#'     product depends on the constituents' means and so is not well defined as
+#'     an effect size; this is why the centering is applied. The constituent
+#'     predictors should still be centered before fitting for the coefficients
+#'     themselves to be interpretable, but the effect-size value no longer
+#'     depends on it.)
+#'   \item \strong{Main effects / random slopes use} \eqn{\sigma^2_X}\strong{,
+#'     which equals} \eqn{E[X^2]} \strong{only when} \eqn{X} \strong{is
+#'     centered.} The function does not center main-effect predictors (doing so
+#'     would not change \eqn{\sigma^2_X = \mathrm{Var}(X)}, which is already
+#'     location-invariant), but the random-slope translation
+#'     \eqn{\sigma^2_b \sigma^2_X} is exact only for centered predictors;
+#'     center continuous predictors before fitting.
+#' }
+#' Under correlated predictors, each \eqn{b} is a partial coefficient (it
+#' controls for the other predictors), but it is multiplied by the predictor's
+#' \emph{total} variance \eqn{\sigma^2_X}, not its unique (residualized)
+#' variance. The per-predictor values are therefore partial (conditional)
+#' effect sizes that are exact for orthogonal designs and do not partition total
+#' variance when predictors are correlated -- as is true of partial eta-squared
+#' generally. For unique-variance (semipartial) behavior under correlation,
+#' residualize the predictor of interest on the others before fitting (or supply
+#' the residualized variance via \code{var_x}). See Rights & Sterba (2019) on
+#' the partial-versus-total distinction.
 #' }
 #'
 #' \subsection{General vs. operative effect sizes}{
@@ -108,6 +175,17 @@
 #' two-argument form (\code{subj_var} + \code{item_var}) is retained for
 #' backward compatibility and is equivalent to
 #' \code{cross_vars = c(subj_var, item_var)}.
+#' }
+#'
+#' \subsection{Confidence intervals}{
+#' With \code{ci = TRUE}, a confidence interval is obtained by parametric
+#' bootstrap via \code{lme4::bootMer}: responses are simulated from the fitted
+#' model, the model is refit, and \code{eta2p} is recomputed on each replicate;
+#' \code{ci_lower} and \code{ci_upper} are the percentile limits. Because
+#' \code{eta2p} is a ratio of REML variance components with no closed-form
+#' sampling distribution, this bootstrap is the appropriate interval rather than
+#' an analytic (e.g. noncentral) formula. Set \code{seed} for reproducibility,
+#' and start with a small \code{n_boot} to gauge runtime on large models.
 #' }
 #'
 #' @references
@@ -192,8 +270,41 @@
 #'       design     = "crossed",
 #'       cross_vars = c("subject", "item"),
 #'       var_x      = 1)   # +/-1 binary predictor: var = 1 by design
+#'
+#' # --- Factor predictor (no manual recoding needed) ---
+#' crossed_data$grp <- factor(rep(c("A", "B"), 60))
+#' model_f <- lmer(y ~ grp + (1 | subject) + (1 | item), data = crossed_data)
+#' # accepts the variable name "grp"; resolves to the coefficient automatically
+#' eta2p(model_f, "grp", crossed_data,
+#'       design = "crossed", cross_vars = c("subject", "item"))
+#'
+#' # --- Operative effect size ---
+#' eta2p(model_c, "condition", crossed_data,
+#'       design = "crossed", cross_vars = c("subject", "item"),
+#'       operative = TRUE)
+#'
+#' # --- Confidence interval by parametric bootstrap ---
+#' eta2p(model_c, "condition", crossed_data,
+#'       design = "crossed", cross_vars = c("subject", "item"),
+#'       ci = TRUE, n_boot = 200, seed = 1)
+#'
+#' # --- Omnibus effect size for a multi-level factor ---
+#' crossed_data$emo <- factor(rep(c("a", "b", "c", "d"), 30))
+#' model_e <- lmer(y ~ emo + (1 | subject) + (1 | item), data = crossed_data)
+#' eta2p_omnibus(model_e, "emo", crossed_data,
+#'               design = "crossed", cross_vars = c("subject", "item"))
+#'
+#' # --- All fixed effects at once (per-coefficient) ---
+#' batch_eta2p(model_c, crossed_data,
+#'             design = "crossed", cross_vars = c("subject", "item"))
 #' }
 #'
+#' @seealso \code{\link{eta2p_omnibus}} for a single factor-level value for a
+#'   multi-df factor or interaction (matching an omnibus \emph{F}/chi-square
+#'   test); \code{\link{batch_eta2p}} to compute per-coefficient values for all
+#'   fixed effects at once.
+#'
+#' @importFrom stats model.frame quantile var
 #' @export
 eta2p <- function(model, effect, data,
                   design       = c("crossed", "nested", "mixed"),
@@ -204,7 +315,11 @@ eta2p <- function(model, effect, data,
                   effect_level = NULL,
                   var_x        = NULL,
                   operative    = FALSE,
-                  verbose      = TRUE) {
+                  ci           = FALSE,
+                  ci_level     = 0.95,
+                  n_boot       = 1000,
+                  seed         = NULL,
+                  verbose      = FALSE) {
 
   design <- match.arg(design)
 
@@ -316,8 +431,30 @@ eta2p <- function(model, effect, data,
   fixed_effects <- lme4::fixef(model)
 
   if (!effect %in% names(fixed_effects)) {
-    stop("Effect '", effect, "' not found in model fixed effects.\n",
-         "Available effects: ", paste(names(fixed_effects), collapse = ", "))
+    # The user may have passed a variable name (e.g. "Age") whose model
+    # coefficient is contrast-coded (e.g. "Age1" or "Ageyr75"). Resolve it: a
+    # factor with k levels produces k-1 coefficients whose names start with the
+    # variable name. If exactly one matches, use it; if several, the factor is
+    # multi-level and maps to several effects, so guide the user.
+    cand <- names(fixed_effects)[startsWith(names(fixed_effects), effect)]
+    cand <- setdiff(cand, "(Intercept)")
+    # Exclude interaction coefficients (those containing ':'): a bare variable
+    # name like "Day" should resolve to its main-effect contrast column, not to
+    # "Day1:StimulusType1". Interaction effects must be requested explicitly.
+    cand <- cand[!grepl(":", cand)]
+    if (length(cand) == 1L) {
+      message("Note: interpreting effect '", effect,
+              "' as model coefficient '", cand, "'.")
+      effect <- cand
+    } else if (length(cand) > 1L) {
+      stop("Effect '", effect, "' maps to several model coefficients: ",
+           paste(cand, collapse = ", "),
+           ".\nThis is a multi-level factor; request one coefficient at a time ",
+           "(e.g. eta2p(model, \"", cand[1], "\", ...)), or use batch_eta2p().")
+    } else {
+      stop("Effect '", effect, "' not found in model fixed effects.\n",
+           "Available effects: ", paste(names(fixed_effects), collapse = ", "))
+    }
   }
 
 
@@ -326,27 +463,79 @@ eta2p <- function(model, effect, data,
   B           <- fixed_effects[effect]
   effect_vars <- strsplit(effect, ":")[[1]]
 
+  # The model design matrix holds exactly the (possibly contrast-coded,
+  # possibly interaction) columns the coefficients refer to. We read predictor
+  # variances from it when the effect is not a plain numeric column in `data`,
+  # which is what lets factor predictors work without manual recoding. This does
+  # not change the estimand: for a numeric predictor present in `data`, the
+  # design-matrix column is identical, so var() is unchanged.
+  Xmat <- tryCatch(lme4::getME(model, "X"), error = function(e) NULL)
+
   if (!is.null(var_x)) {
     sigma2_X <- var_x
 
   } else if (length(effect_vars) == 1) {
     if (effect_vars == "(Intercept)") {
       sigma2_X <- 1
-    } else {
-      if (!effect_vars %in% colnames(data))
-        stop("Variable '", effect_vars, "' not found in data. ",
-             "Supply 'var_x' directly if raw data are unavailable.")
+    } else if (effect_vars %in% colnames(data) &&
+               is.numeric(data[[effect_vars]])) {
       sigma2_X <- var(data[[effect_vars]], na.rm = TRUE)
+    } else if (!is.null(Xmat) && effect %in% colnames(Xmat)) {
+      sigma2_X <- var(Xmat[, effect], na.rm = TRUE)
+    } else {
+      stop("Could not determine the variance of '", effect, "'. ",
+           "It is not a numeric column in `data` and no matching column was ",
+           "found in the model design matrix. Supply 'var_x' directly, or pass ",
+           "the model coefficient name.")
     }
 
   } else {
-    missing_vars <- effect_vars[!effect_vars %in% colnames(data)]
-    if (length(missing_vars) > 0)
-      stop("Variable(s) not found in data: ",
-           paste(missing_vars, collapse = ", "),
-           ". Supply 'var_x' directly if raw data are unavailable.")
-    interaction_product <- Reduce("*", lapply(effect_vars, function(v) data[[v]]))
-    sigma2_X <- var(interaction_product, na.rm = TRUE)
+    # Interaction. Per the centering rule (Josh, 6-16-26): mean-center each
+    # CONSTITUENT predictor, then take the variance of their PRODUCT -- do NOT
+    # center the product itself. This makes the interaction effect size
+    # invariant to the location (means) of the constituents; the raw product
+    # variance is not, because re-centering a constituent by a constant changes
+    # Var(X1*X2) while leaving the model fit and the interaction coefficient
+    # unchanged. With centered components the interaction variance is well
+    # defined and matches the unique-variance (DEE) target.
+    #
+    # We obtain each constituent's column (centered), multiply, and take var().
+    # Constituents may be numeric data columns or factor contrast columns held
+    # in the design matrix.
+    get_constituent <- function(v) {
+      if (v %in% colnames(data) && is.numeric(data[[v]])) return(data[[v]])
+      # factor / contrast-coded constituent: find its design-matrix column(s).
+      # A constituent of an interaction maps to a main-effect column whose name
+      # starts with the variable name (e.g. "Group" -> "Group75yr").
+      if (!is.null(Xmat)) {
+        if (v %in% colnames(Xmat)) return(Xmat[, v])
+        hits <- colnames(Xmat)[startsWith(colnames(Xmat), v) &
+                                 !grepl(":", colnames(Xmat))]
+        if (length(hits) == 1) return(Xmat[, hits])
+      }
+      NULL
+    }
+
+    cols_list <- lapply(effect_vars, get_constituent)
+
+    if (all(!vapply(cols_list, is.null, logical(1)))) {
+      # mean-center each constituent, then form the product
+      centered <- lapply(cols_list, function(z) z - mean(z, na.rm = TRUE))
+      interaction_product <- Reduce("*", centered)
+      sigma2_X <- var(interaction_product, na.rm = TRUE)
+    } else if (!is.null(Xmat) && effect %in% colnames(Xmat)) {
+      # fallback: constituents not individually resolvable; use the model's
+      # product column as-is (assumes the user centered before fitting).
+      warning("Interaction '", effect, "': could not resolve all constituents ",
+              "to center them; using the model's product column directly. ",
+              "Ensure the constituent predictors were mean-centered before ",
+              "fitting, or supply 'var_x'.")
+      sigma2_X <- var(Xmat[, effect], na.rm = TRUE)
+    } else {
+      stop("Could not determine the variance of interaction '", effect, "'. ",
+           "Supply 'var_x' directly, or ensure the interaction column is in the ",
+           "model design matrix.")
+    }
   }
 
   variance_effect <- B^2 * sigma2_X
@@ -359,11 +548,23 @@ eta2p <- function(model, effect, data,
   within_between <- NULL
 
   if (operative) {
+    # Detection needs the underlying data variable name(s), but `effect_vars`
+    # may hold contrast-coded coefficient names (e.g. "Age1" for factor "Age").
+    # Map each back to the data column whose name prefixes it.
+    resolve_to_data_var <- function(ev) {
+      if (ev %in% colnames(data)) return(ev)
+      hit <- colnames(data)[vapply(colnames(data),
+                                   function(cn) startsWith(ev, cn), logical(1))]
+      # choose the longest matching column name (most specific)
+      if (length(hit)) hit[which.max(nchar(hit))] else ev
+    }
+    detect_vars <- vapply(effect_vars, resolve_to_data_var, character(1))
+
     if (design == "crossed") {
-      within_between <- detect_within_between(data, effect_vars,
+      within_between <- detect_within_between(data, detect_vars,
                                               subj_var, item_var)
     } else if (design == "mixed") {
-      within_between <- detect_within_between_mixed(data, effect_vars,
+      within_between <- detect_within_between_mixed(data, detect_vars,
                                                     cross_vars, nest_vars)
     }
     # nested: operative handled inside calc_error_nested via effect_level
@@ -375,6 +576,7 @@ eta2p <- function(model, effect, data,
   if (design == "crossed") {
     result <- calc_error_crossed(vc, data,
                                  cross_vars     = cross_vars,
+                                 model          = model,
                                  operative      = operative,
                                  within_between = within_between,
                                  effect_vars    = effect_vars)
@@ -383,6 +585,7 @@ eta2p <- function(model, effect, data,
     if (is.null(effect_level))
       effect_level <- detect_effect_level(data, effect, effect_vars, nest_vars)
     result <- calc_error_nested(vc, data, nest_vars, effect_level,
+                                model       = model,
                                 operative   = operative,
                                 effect_vars = effect_vars)
 
@@ -393,6 +596,7 @@ eta2p <- function(model, effect, data,
                                cross_vars     = cross_vars,
                                nest_vars      = nest_vars,
                                effect_level   = effect_level,
+                               model          = model,
                                operative      = operative,
                                within_between = within_between,
                                effect_vars    = effect_vars)
@@ -472,16 +676,186 @@ eta2p <- function(model, effect, data,
 
   class(output) <- c("eta2p_lmm", "list")
 
+  # PARAMETRIC BOOTSTRAP CONFIDENCE INTERVAL (opt-in)
+  # eta2p is a ratio of REML variance components, which has no closed-form
+  # sampling distribution. We therefore obtain a CI by parametric bootstrap:
+  # simulate new responses from the fitted model (lme4::bootMer), refit, and
+  # recompute eta2p on each replicate, then take percentile limits. This makes
+  # no distributional assumption beyond the model itself and respects the actual
+  # estimand. It is opt-in because each replicate refits the model.
+  if (ci) {
+    if (!requireNamespace("lme4", quietly = TRUE))
+      stop("Package 'lme4' is required for bootstrap confidence intervals.")
+    if (!is.null(seed)) set.seed(seed)
+
+    boot_stat <- function(fitted_model) {
+      r <- tryCatch(
+        eta2p(fitted_model, effect, data,
+              design       = design,
+              subj_var     = subj_var,
+              item_var     = item_var,
+              cross_vars   = cross_vars,
+              nest_vars    = nest_vars,
+              effect_level = effect_level,
+              var_x        = var_x,
+              operative    = operative,
+              ci           = FALSE,          # prevent recursion
+              verbose      = FALSE),
+        error = function(e) NULL)
+      if (is.null(r)) NA_real_ else as.numeric(r$eta2p)
+    }
+
+    bb <- tryCatch(
+      suppressWarnings(lme4::bootMer(model, boot_stat, nsim = n_boot,
+                                     type = "parametric",
+                                     use.u = FALSE)),
+      error = function(e) NULL)
+
+    if (!is.null(bb)) {
+      vals  <- bb$t[, 1]
+      vals  <- vals[is.finite(vals)]
+      alpha <- 1 - ci_level
+      qs    <- stats::quantile(vals, c(alpha / 2, 1 - alpha / 2),
+                               na.rm = TRUE, names = FALSE)
+      output$ci_level   <- ci_level
+      output$ci_lower   <- qs[1]
+      output$ci_upper   <- qs[2]
+      output$boot_n     <- length(vals)
+      output$boot_method <- "parametric (bootMer)"
+    } else {
+      output$ci_lower <- NA_real_
+      output$ci_upper <- NA_real_
+      warning("Bootstrap failed; confidence interval not available.")
+    }
+  }
+
   if (verbose) print(output)
 
   return(output)
 }
 
 
+#' Omnibus (factor-level) Partial Eta-Squared for a Multi-df Effect
+#'
+#' For a multi-level factor or a multi-df interaction, computes a single
+#' factor-level partial eta-squared corresponding to the omnibus test of that
+#' effect (e.g. the chi-square or F test on all of its degrees of freedom),
+#' rather than one value per contrast. The variance attributed to the effect is
+#' the variance of the summed fitted contribution of all the design-matrix
+#' columns belonging to the effect (which correctly includes the covariances
+#' among those columns); the error denominator is the same one eta2p() uses.
+#'
+#' @param model A fitted lme4 model.
+#' @param effect The variable/effect name. For a factor main effect, the bare
+#'   variable name (e.g. "rating_type"). For an interaction, the colon form of
+#'   the term as it appears in the design matrix (e.g. "group:rating_type").
+#' @param data The data frame used to fit the model.
+#' @param ... Passed to eta2p() to obtain the error denominator (design,
+#'   cross_vars, subj_var, item_var, nest_vars, operative, etc.).
+#'
+#' @return An object of class \code{"eta2p_omnibus"}: a list containing
+#' \item{eta2p}{The omnibus (factor-level) partial eta-squared.}
+#' \item{variance_effect}{Variance of the summed fitted contribution of all the
+#'   effect's design-matrix columns (includes covariances among them).}
+#' \item{variance_error}{Error variance denominator (from \code{eta2p()}).}
+#' \item{effect}{The effect name requested.}
+#' \item{coefficients}{The design-matrix column names aggregated.}
+#' \item{n_df}{Number of columns aggregated (the effect's degrees of freedom;
+#'   matches the df of the corresponding omnibus test).}
+#' \item{type}{\code{"omnibus"}.}
+#'
+#' @details
+#' \code{batch_eta2p()} and a per-coefficient call to \code{eta2p()} return one
+#' value per contrast (per design-matrix column). For a multi-level factor or a
+#' multi-df interaction, none of those single values corresponds to the omnibus
+#' test of the whole effect (the \emph{F} or chi-square test on all of its
+#' degrees of freedom). This function fills that gap.
+#'
+#' The omnibus variance explained is computed as the variance of the
+#' \emph{summed} fitted contribution of all the effect's columns,
+#' \eqn{\mathrm{Var}(\sum_j b_j x_j)}, which correctly includes the covariances
+#' among the dummy/contrast columns. Simply adding the per-coefficient
+#' numerators would drop those covariances and is incorrect. The error
+#' denominator is the same one \code{eta2p()} uses, so the result remains a
+#' partial eta-squared (error-variance denominator), \emph{not} a total-variance
+#' \eqn{R^2}; expect it to differ from \code{r2glmm::r2beta()}, which targets the
+#' latter.
+#'
+#' @examples
+#' \donttest{
+#' library(lme4)
+#' set.seed(1)
+#' d <- expand.grid(subject = factor(1:30), item = factor(1:12),
+#'                  emo = factor(c("a", "b", "c", "d")))
+#' d$y <- as.integer(d$emo) + rnorm(30)[d$subject] + rnorm(nrow(d))
+#' m <- lmer(y ~ emo + (1 | subject) + (1 | item), data = d)
+#' # one factor-level value to pair with the omnibus test of `emo`:
+#' eta2p_omnibus(m, "emo", d, design = "crossed",
+#'               cross_vars = c("subject", "item"))
+#' }
+#'
+#' @seealso \code{\link{eta2p}} for single-coefficient values and
+#'   \code{\link{batch_eta2p}} for all coefficients at once.
+#'
+#' @export
+eta2p_omnibus <- function(model, effect, data, ...) {
+  X <- lme4::getME(model, "X")
+  b <- lme4::fixef(model)
+
+  # Identify the design-matrix columns belonging to this effect.
+  if (grepl(":", effect)) {
+    # interaction: match columns whose set of ':'-separated variable stems equals
+    # the requested term's stems (order-independent), so "group:rating_type"
+    # collects group?:rating_type? dummy columns.
+    want <- sort(strsplit(effect, ":")[[1]])
+    col_is_term <- vapply(colnames(X), function(cn) {
+      if (!grepl(":", cn)) return(FALSE)
+      parts <- strsplit(cn, ":")[[1]]
+      # strip trailing factor-level text by matching each requested stem as a prefix
+      all(vapply(want, function(w) any(startsWith(parts, w)), logical(1))) &&
+        length(parts) == length(want)
+    }, logical(1))
+    cols <- colnames(X)[col_is_term]
+  } else {
+    cols <- colnames(X)[startsWith(colnames(X), effect) & !grepl(":", colnames(X))]
+    cols <- setdiff(cols, "(Intercept)")
+  }
+
+  if (length(cols) == 0)
+    stop("No design-matrix columns found for effect '", effect, "'. ",
+         "Available columns: ", paste(colnames(X), collapse = ", "))
+
+  # Omnibus variance explained = variance of the summed fitted contribution of
+  # all columns for this effect (includes their covariances).
+  contrib  <- as.numeric(X[, cols, drop = FALSE] %*% b[cols])
+  var_eff  <- stats::var(contrib)
+
+  # Reuse eta2p()'s error denominator (identical across the effect's columns).
+  ref <- eta2p(model, cols[1], data, ..., verbose = FALSE)
+  var_err <- ref$variance_error
+
+  out <- list(
+    eta2p           = var_eff / (var_eff + var_err),
+    variance_effect = var_eff,
+    variance_error  = var_err,
+    effect          = effect,
+    coefficients    = cols,
+    n_df            = length(cols),
+    type            = "omnibus"
+  )
+  class(out) <- c("eta2p_omnibus", "list")
+  out
+}
+
+
 #' Batch Calculate Partial Eta-Squared for Multiple Effects
 #'
 #' Calculates partial eta-squared for all fixed effects (excluding the
-#' intercept) in a model.
+#' intercept) in a model, returning one row per model coefficient. For a
+#' multi-level factor or multi-df interaction this yields one value
+#' \emph{per contrast} (per design-matrix column), not a single factor-level
+#' value; for the omnibus effect size of such a term, use
+#' \code{\link{eta2p_omnibus}}.
 #'
 #' @inheritParams eta2p
 #'
@@ -498,6 +872,8 @@ eta2p <- function(model, effect, data,
 #' Rows are sorted by \code{eta2p} in decreasing order.
 #'
 #' @export
+
+
 batch_eta2p <- function(model, data,
                         design       = c("crossed", "nested", "mixed"),
                         subj_var     = NULL,
@@ -642,8 +1018,14 @@ detect_within_between_mixed <- function(data, effect_vars,
 #' Returns TRUE when the effect variable varies within groups of group_var
 #' @noRd
 check_within_factor <- function(data, effect_var, group_var) {
-  var_within <- tapply(data[[effect_var]], data[[group_var]], var, na.rm = TRUE)
-  any(var_within > 1e-10, na.rm = TRUE)
+  x <- data[[effect_var]]
+  # A predictor "varies within" a grouping factor if, within at least one level
+  # of that factor, the predictor takes more than one distinct value. This works
+  # for factors, characters, and numerics alike (var() is undefined on factors).
+  xnum <- if (is.factor(x) || is.character(x)) as.integer(as.factor(x)) else x
+  n_distinct_within <- tapply(xnum, data[[group_var]],
+                              function(z) length(unique(z[!is.na(z)])))
+  any(n_distinct_within > 1, na.rm = TRUE)
 }
 
 
@@ -652,24 +1034,80 @@ check_within_factor <- function(data, effect_var, group_var) {
 #' Translate a random slope variance component to the outcome scale
 #' (sigma2_b * sigma2_X).  Returns 0 and warns if variables are missing.
 #' @noRd
-slope_contribution <- function(slope_var_name, vc_row_vcov, data) {
+slope_contribution <- function(slope_var_name, vc_row_vcov, data, model = NULL) {
+
+  # Resolve the predictor column for this random slope. lme4 names a factor's
+  # random slope with its contrast-coded name (e.g. "Ageyr75"), which is NOT a
+  # column in `data`; it lives in the model design matrix. We look there first,
+  # falling back to the data frame for plain numeric predictors. This mirrors the
+  # fixed-effect variance lookup and is what makes factor random slopes work.
+  Xmat <- if (!is.null(model)) tryCatch(lme4::getME(model, "X"),
+                                        error = function(e) NULL) else NULL
+
+  lookup_var <- function(nm) {
+    if (!is.null(Xmat) && nm %in% colnames(Xmat))
+      return(var(Xmat[, nm], na.rm = TRUE))
+    if (nm %in% colnames(data) && is.numeric(data[[nm]]))
+      return(var(data[[nm]], na.rm = TRUE))
+    # Factor random slope: lme4 may name it with a level (e.g. "Ageyr75") and
+    # code it as a dummy, independent of the fixed-effect contrast. Reconstruct
+    # that dummy column from the model frame: find the factor whose name prefixes
+    # `nm` and whose level completes it.
+    if (!is.null(model)) {
+      mf <- tryCatch(model.frame(model), error = function(e) NULL)
+      if (!is.null(mf)) {
+        for (v in names(mf)) {
+          col <- mf[[v]]
+          if (is.factor(col) && startsWith(nm, v)) {
+            lev <- sub(paste0("^", v), "", nm)
+            if (lev %in% levels(col))
+              return(var(as.numeric(col == lev), na.rm = TRUE))
+          }
+        }
+      }
+    }
+    NA_real_
+  }
 
   if (grepl(":", slope_var_name)) {
+    # Interaction random slope. The RE term name (e.g. "Dayd2:StimulusTypes2")
+    # is typically dummy-coded and will not match the (possibly sum-coded)
+    # fixed-effect product column in X. Resolve each component with the same
+    # logic used for single slopes (design matrix, data, or reconstructed factor
+    # dummy), then take the variance of their product. Components are mean-
+    # centered first, consistent with the interaction handling for fixed effects.
     parts <- strsplit(slope_var_name, ":")[[1]]
-    if (!all(parts %in% colnames(data))) {
-      warning("Slope variable '", slope_var_name,
-              "' components not found in data - skipping.")
+    cols  <- lapply(parts, function(p) {
+      if (!is.null(Xmat) && p %in% colnames(Xmat)) return(Xmat[, p])
+      if (p %in% colnames(data) && is.numeric(data[[p]])) return(data[[p]])
+      # reconstruct factor dummy from the model frame (e.g. "Dayd2" -> Day=="d2")
+      if (!is.null(model)) {
+        mf <- tryCatch(model.frame(model), error = function(e) NULL)
+        if (!is.null(mf)) for (v in names(mf)) {
+          col <- mf[[v]]
+          if (is.factor(col) && startsWith(p, v)) {
+            lev <- sub(paste0("^", v), "", p)
+            if (lev %in% levels(col)) return(as.numeric(col == lev))
+          }
+        }
+      }
+      NULL
+    })
+    if (any(vapply(cols, is.null, logical(1)))) {
+      warning("Interaction slope '", slope_var_name,
+              "' components could not be resolved - skipping.")
       return(0)
     }
-    product  <- Reduce("*", lapply(parts, function(v) data[[v]]))
+    centered <- lapply(cols, function(z) z - mean(z, na.rm = TRUE))
+    product  <- Reduce("*", centered)
     sigma2_X <- var(product, na.rm = TRUE)
   } else {
-    if (!slope_var_name %in% colnames(data)) {
+    sigma2_X <- lookup_var(slope_var_name)
+    if (is.na(sigma2_X)) {
       warning("Slope variable '", slope_var_name,
-              "' not found in data - skipping.")
+              "' not found in model or data - skipping.")
       return(0)
     }
-    sigma2_X <- var(data[[slope_var_name]], na.rm = TRUE)
   }
 
   vc_row_vcov * sigma2_X
@@ -692,7 +1130,7 @@ slope_matches_effect <- function(slope_var_name, effect_vars) {
 
 #' Compute error variance for fully crossed designs
 #' @noRd
-calc_error_crossed <- function(vc, data, cross_vars,
+calc_error_crossed <- function(vc, data, cross_vars, model = NULL,
                                operative      = FALSE,
                                within_between = NULL,
                                effect_vars    = NULL) {
@@ -721,7 +1159,7 @@ calc_error_crossed <- function(vc, data, cross_vars,
 
     for (i in seq_len(nrow(slp_rows))) {
       nm                <- slp_rows$var1[i]
-      contributions[nm] <- slope_contribution(nm, slp_rows$vcov[i], data)
+      contributions[nm] <- slope_contribution(nm, slp_rows$vcov[i], data, model = model)
     }
 
     factor_slope_vars[[cv]] <- contributions
@@ -729,20 +1167,16 @@ calc_error_crossed <- function(vc, data, cross_vars,
 
   if (operative && !is.null(within_between) && !is.null(effect_vars)) {
 
-    # For operative: only matching slopes, and between-factor intercepts
-    operative_slope_total <- 0
-    for (cv in cross_vars) {
-      for (nm in names(factor_slope_vars[[cv]])) {
-        if (slope_matches_effect(nm, effect_vars)) {
-          operative_slope_total <- operative_slope_total +
-            factor_slope_vars[[cv]][nm]
-        }
-      }
-    }
+    # Operative denominator (per the general/operative definition): keep the
+    # residual, ALL random-slope contributions, and the intercept variance only
+    # of factors the predictor varies BETWEEN. Intercepts of factors the
+    # predictor varies WITHIN are dropped, because those between-group
+    # differences are differenced out by the within-factor structure of the
+    # effect's test and so do not enter its standard error.
+    all_slope_total <- sum(unlist(factor_slope_vars))
 
-    variance_error <- residual_var + operative_slope_total
+    variance_error <- residual_var + all_slope_total
 
-    # Add intercept variance for any factor where the effect is "between"
     for (cv in cross_vars) {
       status <- within_between[[cv]]   # works for both list and named vector
       if (!is.null(status) && identical(status, "between")) {
@@ -772,7 +1206,7 @@ calc_error_crossed <- function(vc, data, cross_vars,
 
 #' Compute error variance for fully nested designs
 #' @noRd
-calc_error_nested <- function(vc, data, nest_vars, effect_level,
+calc_error_nested <- function(vc, data, nest_vars, effect_level, model = NULL,
                               operative   = FALSE,
                               effect_vars = NULL) {
 
@@ -815,15 +1249,25 @@ calc_error_nested <- function(vc, data, nest_vars, effect_level,
     total <- 0
     for (i in seq_len(nrow(slp_rows))) {
       nm <- slp_rows$var1[i]
-      if (operative && !is.null(effect_vars) &&
-          !slope_matches_effect(nm, effect_vars)) next
-      total <- total + slope_contribution(nm, slp_rows$vcov[i], data)
+      total <- total + slope_contribution(nm, slp_rows$vcov[i], data, model = model)
     }
     total
   })
   names(level_slope_vars) <- nest_vars
 
-  if (level_num == 1) {
+  if (operative) {
+    # Operative: keep residual + ALL slopes, plus intercepts only of nesting
+    # levels the predictor varies BETWEEN. A level the predictor varies WITHIN
+    # has its intercept dropped (its between-group differences are differenced
+    # out by the within-level structure of the effect's test). This mirrors the
+    # crossed-design operative rule.
+    variance_error <- residual_var + sum(level_slope_vars)
+    for (v in nest_vars) {
+      varies_within <- check_within_factor(data, effect_vars[1], v)
+      if (!varies_within)
+        variance_error <- variance_error + level_intercept_vars[v]
+    }
+  } else if (level_num == 1) {
     variance_error <- residual_var +
       sum(level_intercept_vars) +
       sum(level_slope_vars)
@@ -860,7 +1304,7 @@ calc_error_nested <- function(vc, data, nest_vars, effect_level,
 #' included in the denominator.
 #'
 #' @noRd
-calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level,
+calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level, model = NULL,
                              operative      = FALSE,
                              within_between = NULL,
                              effect_vars    = NULL) {
@@ -890,13 +1334,14 @@ calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level,
     )
     for (i in seq_len(nrow(slp_rows))) {
       nm         <- slp_rows$var1[i]
-      contrib[nm] <- slope_contribution(nm, slp_rows$vcov[i], data)
+      contrib[nm] <- slope_contribution(nm, slp_rows$vcov[i], data, model = model)
     }
     cross_slope[[cv]] <- contrib
   }
 
   # --- nested intercepts and slopes (reuse nested logic) ---
   nested_result <- calc_error_nested(vc, data, nest_vars, effect_level,
+                                     model       = model,
                                      operative   = FALSE,   # handle manually below
                                      effect_vars = effect_vars)
   nest_int   <- nested_result$components$level_intercepts
@@ -959,7 +1404,7 @@ calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level,
         nm <- slp_rows$var1[i]
         if (slope_matches_effect(nm, effect_vars))
           op_nest_slopes <- op_nest_slopes +
-            slope_contribution(nm, slp_rows$vcov[i], data)
+            slope_contribution(nm, slp_rows$vcov[i], data, model = model)
       }
     }
 

@@ -16,14 +16,26 @@ eta2p(
   effect_level = NULL,
   var_x = NULL,
   operative = FALSE,
-  verbose = TRUE
+  ci = FALSE,
+  ci_level = 0.95,
+  n_boot = 1000,
+  seed = NULL,
+  verbose = FALSE
 )
 }
 \arguments{
 \item{model}{A fitted model object from \code{lme4::lmer()}.}
 
 \item{effect}{Character string specifying the fixed effect to analyze.
-Must match a name in \code{fixef(model)}.}
+May be given either as the model coefficient name (e.g.
+\code{"Group75yr"}) or as the underlying variable name (e.g.
+\code{"Group"}); a variable name that maps to a single coefficient is
+resolved automatically (with a message). A variable that maps to several
+coefficients (a multi-level factor) raises an informative error pointing to
+\code{eta2p_omnibus()} (for one factor-level value) or
+\code{batch_eta2p()} (for per-coefficient values). Factor predictors and
+factor random slopes are read from the model design matrix / model frame,
+so no manual recoding to numeric is required.}
 
 \item{data}{Data frame used to fit the model.}
 
@@ -62,8 +74,26 @@ predictor variance is known (e.g., from design: a +/-1 binary predictor has
 (excludes variance components that do not contribute to the SE of the
 effect). Default is \code{FALSE}.}
 
+\item{ci}{Logical. If \code{TRUE}, computes a confidence interval for
+\code{eta2p} by parametric bootstrap (\code{lme4::bootMer}): new responses
+are simulated from the fitted model, the model is refit, and \code{eta2p}
+is recomputed on each replicate, with percentile limits taken from the
+resulting distribution. This is the appropriate interval for a ratio of
+REML variance components, which has no closed-form sampling distribution.
+Each replicate refits the model, so this is opt-in and can be slow on large
+models. Default is \code{FALSE}.}
+
+\item{ci_level}{Numeric confidence level for the bootstrap interval (default
+\code{0.95}).}
+
+\item{n_boot}{Integer number of bootstrap replicates when \code{ci = TRUE}
+(default \code{1000}). Use a smaller value (e.g. 100-200) to gauge runtime
+on large models before committing to the full count.}
+
+\item{seed}{Optional integer seed for reproducible bootstrap intervals.}
+
 \item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
-\code{TRUE}.}
+\code{FALSE}.}
 }
 \value{
 An object of class \code{"eta2p_lmm"} containing:
@@ -74,6 +104,10 @@ An object of class \code{"eta2p_lmm"} containing:
 \item{design}{Design type: \code{"crossed"}, \code{"nested"}, or
 \code{"mixed"}.}
 \item{operative}{Whether operative effect size was calculated.}
+\item{ci_level, ci_lower, ci_upper, boot_n, boot_method}{(Only when
+\code{ci = TRUE}) The confidence level, the lower and upper percentile
+bootstrap limits, the number of usable bootstrap replicates, and the
+method label (\code{"parametric (bootMer)"}).}
 \item{variance_components}{List of individual variance components. For
 \code{"mixed"} designs this is a list with \code{$crossed} and
 \code{$nested} sub-lists.}
@@ -97,13 +131,54 @@ models with crossed, nested, or mixed (crossed-and-nested) random effects.
 \details{
 \subsection{Variance decomposition}{
 The function implements a variance decomposition approach for computing
-partial eta-squared in mixed models. Random slope variances are translated
-to the outcome scale using:
-\deqn{\sigma^2_{\text{slope}}(Y) = \sigma^2_b \times \sigma^2_X}
-For interaction effects, \eqn{\sigma^2_X} is computed as the variance of
-the actual product term, correctly accounting for centering, scaling, and
-predictor correlation. The \code{var_x} argument allows bypassing this
-computation when the variance is known a priori.
+partial eta-squared in mixed models. The variance a fixed effect explains is
+\deqn{\mathrm{Var}_{\text{explained}} = b^2 \times \sigma^2_X,}
+where \eqn{b} is the (partial) fixed-effect coefficient and \eqn{\sigma^2_X}
+is the variance of the predictor column. Random slope variances are
+translated to the outcome scale by the same principle,
+\deqn{\sigma^2_{\text{slope}}(Y) = \sigma^2_b \times \sigma^2_X.}
+For an interaction, \eqn{\sigma^2_X} is the variance of the product of the
+\emph{mean-centered} constituent predictors (see "Centering" below). The
+\code{var_x} argument bypasses this computation when the variance is known a
+priori.
+}
+
+\subsection{Centering and intended scope}{
+These quantities are exact when predictors are \strong{mean-centered}, which
+is standard and recommended practice for the experimental and contrast-coded
+designs the method primarily targets (sum/contrast coding centers factors
+automatically). Two points:
+\itemize{
+\item \strong{Interactions: components are centered automatically.} For an
+interaction the function mean-centers each \emph{constituent} predictor
+and then takes the variance of their product (it does \emph{not} center
+the product itself). This makes the interaction effect size invariant to
+the location of the constituents: re-centering a predictor by a constant
+leaves the model fit and the interaction coefficient unchanged, and now
+also leaves the effect size unchanged. (The variance of the \emph{raw}
+product depends on the constituents' means and so is not well defined as
+an effect size; this is why the centering is applied. The constituent
+predictors should still be centered before fitting for the coefficients
+themselves to be interpretable, but the effect-size value no longer
+depends on it.)
+\item \strong{Main effects / random slopes use} \eqn{\sigma^2_X}\strong{,
+which equals} \eqn{E[X^2]} \strong{only when} \eqn{X} \strong{is
+centered.} The function does not center main-effect predictors (doing so
+would not change \eqn{\sigma^2_X = \mathrm{Var}(X)}, which is already
+location-invariant), but the random-slope translation
+\eqn{\sigma^2_b \sigma^2_X} is exact only for centered predictors;
+center continuous predictors before fitting.
+}
+Under correlated predictors, each \eqn{b} is a partial coefficient (it
+controls for the other predictors), but it is multiplied by the predictor's
+\emph{total} variance \eqn{\sigma^2_X}, not its unique (residualized)
+variance. The per-predictor values are therefore partial (conditional)
+effect sizes that are exact for orthogonal designs and do not partition total
+variance when predictors are correlated -- as is true of partial eta-squared
+generally. For unique-variance (semipartial) behavior under correlation,
+residualize the predictor of interest on the others before fitting (or supply
+the residualized variance via \code{var_x}). See Rights & Sterba (2019) on
+the partial-versus-total distinction.
 }
 
 \subsection{General vs. operative effect sizes}{
@@ -141,6 +216,17 @@ Supports any number of grouping factors via \code{cross_vars}. The
 two-argument form (\code{subj_var} + \code{item_var}) is retained for
 backward compatibility and is equivalent to
 \code{cross_vars = c(subj_var, item_var)}.
+}
+
+\subsection{Confidence intervals}{
+With \code{ci = TRUE}, a confidence interval is obtained by parametric
+bootstrap via \code{lme4::bootMer}: responses are simulated from the fitted
+model, the model is refit, and \code{eta2p} is recomputed on each replicate;
+\code{ci_lower} and \code{ci_upper} are the percentile limits. Because
+\code{eta2p} is a ratio of REML variance components with no closed-form
+sampling distribution, this bootstrap is the appropriate interval rather than
+an analytic (e.g. noncentral) formula. Set \code{seed} for reproducibility,
+and start with a small \code{n_boot} to gauge runtime on large models.
 }
 }
 \examples{
@@ -209,6 +295,33 @@ eta2p(model_c, "condition", crossed_data,
       design     = "crossed",
       cross_vars = c("subject", "item"),
       var_x      = 1)   # +/-1 binary predictor: var = 1 by design
+
+# --- Factor predictor (no manual recoding needed) ---
+crossed_data$grp <- factor(rep(c("A", "B"), 60))
+model_f <- lmer(y ~ grp + (1 | subject) + (1 | item), data = crossed_data)
+# accepts the variable name "grp"; resolves to the coefficient automatically
+eta2p(model_f, "grp", crossed_data,
+      design = "crossed", cross_vars = c("subject", "item"))
+
+# --- Operative effect size ---
+eta2p(model_c, "condition", crossed_data,
+      design = "crossed", cross_vars = c("subject", "item"),
+      operative = TRUE)
+
+# --- Confidence interval by parametric bootstrap ---
+eta2p(model_c, "condition", crossed_data,
+      design = "crossed", cross_vars = c("subject", "item"),
+      ci = TRUE, n_boot = 200, seed = 1)
+
+# --- Omnibus effect size for a multi-level factor ---
+crossed_data$emo <- factor(rep(c("a", "b", "c", "d"), 30))
+model_e <- lmer(y ~ emo + (1 | subject) + (1 | item), data = crossed_data)
+eta2p_omnibus(model_e, "emo", crossed_data,
+              design = "crossed", cross_vars = c("subject", "item"))
+
+# --- All fixed effects at once (per-coefficient) ---
+batch_eta2p(model_c, crossed_data,
+            design = "crossed", cross_vars = c("subject", "item"))
 }
 
 }
@@ -227,4 +340,10 @@ Rights, J. D., & Sterba, S. K. (2019). Quantifying explained variance in
 multilevel models: An integrative framework for defining R-squared measures.
 \emph{Psychological Methods}, 24(3), 309--338.
 \doi{10.1037/met0000184}
+}
+\seealso{
+\code{\link{eta2p_omnibus}} for a single factor-level value for a
+multi-df factor or interaction (matching an omnibus \emph{F}/chi-square
+test); \code{\link{batch_eta2p}} to compute per-coefficient values for all
+fixed effects at once.
 }

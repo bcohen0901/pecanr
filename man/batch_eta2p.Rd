@@ -47,7 +47,7 @@ within models). Required for \code{design = "nested"} or
 effect). Default is \code{FALSE}.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
-\code{TRUE}.}
+\code{FALSE}.}
 }
 \value{
 A data frame with one row per effect containing:
@@ -64,5 +64,9 @@ Rows are sorted by \code{eta2p} in decreasing order.
 }
 \description{
 Calculates partial eta-squared for all fixed effects (excluding the
-intercept) in a model.
+intercept) in a model, returning one row per model coefficient. For a
+multi-level factor or multi-df interaction this yields one value
+\emph{per contrast} (per design-matrix column), not a single factor-level
+value; for the omnibus effect size of such a term, use
+\code{\link{eta2p_omnibus}}.
 }
