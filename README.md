@@ -32,6 +32,8 @@ approach that translates slope variances to the outcome scale.
   F or chi-square test
 - **Operative effect sizes** – excluding variance components that don’t
   contribute to the standard error of the tested effect
+- **Unique (semipartial) variance** – optional residualization for
+  correlated predictors via `partial_predictors = TRUE`
 - **Confidence intervals** – optional, via parametric bootstrap
 
 ## Installation
@@ -154,6 +156,22 @@ eta2p(model, effect = "condition", data = my_data,
       design     = "crossed",
       cross_vars = c("subject", "item"),
       operative  = TRUE)
+```
+
+### Unique (semipartial) variance for correlated predictors
+
+By default the variance attributed to a predictor uses its total variance,
+so the per-predictor effect sizes are partial (conditional) and are exact
+for orthogonal designs but do not partition variance when predictors are
+correlated. Set `partial_predictors = TRUE` to instead use each predictor's
+unique variance (residualized on the others), which declines as redundancy
+increases. For centered, orthogonal designs the two are identical.
+
+``` r
+eta2p(model, effect = "x1", data = my_data,
+      design     = "crossed",
+      cross_vars = c("subject", "item"),
+      partial_predictors = TRUE)
 ```
 
 ### Confidence intervals

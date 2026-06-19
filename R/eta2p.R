@@ -42,6 +42,16 @@
 #' @param operative Logical. If \code{TRUE}, calculates operative effect size
 #'   (excludes variance components that do not contribute to the SE of the
 #'   effect). Default is \code{FALSE}.
+#' @param partial_predictors Logical. If \code{TRUE}, the variance attributed to
+#'   a single (non-interaction) predictor is its \emph{unique} (semipartial)
+#'   variance -- the variance remaining after removing the part linearly
+#'   predictable from the other fixed-effect predictors -- rather than its total
+#'   variance. This yields a semipartial variance-explained measure that
+#'   declines as a predictor's redundancy with the others increases. For
+#'   centered, orthogonal designs it is identical to the default; it matters only
+#'   when predictors are correlated. Default is \code{FALSE} (use the total
+#'   variance of the predictor). See Details. Has no effect on interaction terms
+#'   or when \code{var_x} is supplied.
 #' @param ci Logical. If \code{TRUE}, computes a confidence interval for
 #'   \code{eta2p} by parametric bootstrap (\code{lme4::bootMer}): new responses
 #'   are simulated from the fitted model, the model is refit, and \code{eta2p}
@@ -129,15 +139,24 @@
 #'     center continuous predictors before fitting.
 #' }
 #' Under correlated predictors, each \eqn{b} is a partial coefficient (it
-#' controls for the other predictors), but it is multiplied by the predictor's
-#' \emph{total} variance \eqn{\sigma^2_X}, not its unique (residualized)
-#' variance. The per-predictor values are therefore partial (conditional)
-#' effect sizes that are exact for orthogonal designs and do not partition total
-#' variance when predictors are correlated -- as is true of partial eta-squared
-#' generally. For unique-variance (semipartial) behavior under correlation,
-#' residualize the predictor of interest on the others before fitting (or supply
-#' the residualized variance via \code{var_x}). See Rights & Sterba (2019) on
-#' the partial-versus-total distinction.
+#' controls for the other predictors), but by default it is multiplied by the
+#' predictor's \emph{total} variance \eqn{\sigma^2_X}, not its unique
+#' (residualized) variance. The per-predictor values are therefore partial
+#' (conditional) effect sizes that are exact for orthogonal designs and do not
+#' partition total variance when predictors are correlated -- as is true of
+#' partial eta-squared generally.
+#'
+#' For unique-variance (semipartial) behavior under correlation, set
+#' \code{partial_predictors = TRUE}. This residualizes the focal predictor on
+#' the other fixed-effect predictors before taking its variance, so the variance
+#' attributed to it is \eqn{b^2 \, \mathrm{Var}(X \mid X_{others})}. The
+#' resulting value declines as the predictor's redundancy with the others
+#' increases, matching the unique-variance target estimated by an explained-
+#' error (model-comparison) approach. For centered, orthogonal designs the two
+#' options coincide exactly, because the covariance among predictors is zero.
+#' The choice is independent of the operative option, which concerns the error
+#' denominator rather than the numerator. See Rights & Sterba (2019) on the
+#' partial-versus-total distinction.
 #' }
 #'
 #' \subsection{General vs. operative effect sizes}{
@@ -283,6 +302,11 @@
 #'       design = "crossed", cross_vars = c("subject", "item"),
 #'       operative = TRUE)
 #'
+#' # --- Unique (semipartial) variance for correlated predictors ---
+#' eta2p(model_c, "condition", crossed_data,
+#'       design = "crossed", cross_vars = c("subject", "item"),
+#'       partial_predictors = TRUE)
+#'
 #' # --- Confidence interval by parametric bootstrap ---
 #' eta2p(model_c, "condition", crossed_data,
 #'       design = "crossed", cross_vars = c("subject", "item"),
@@ -304,7 +328,7 @@
 #'   test); \code{\link{batch_eta2p}} to compute per-coefficient values for all
 #'   fixed effects at once.
 #'
-#' @importFrom stats model.frame quantile var
+#' @importFrom stats model.frame var
 #' @export
 eta2p <- function(model, effect, data,
                   design       = c("crossed", "nested", "mixed"),
@@ -315,6 +339,7 @@ eta2p <- function(model, effect, data,
                   effect_level = NULL,
                   var_x        = NULL,
                   operative    = FALSE,
+                  partial_predictors = FALSE,
                   ci           = FALSE,
                   ci_level     = 0.95,
                   n_boot       = 1000,
@@ -538,6 +563,42 @@ eta2p <- function(model, effect, data,
     }
   }
 
+  # OPTIONAL: semipartial (residualized) variance for correlated predictors.
+  # When partial_predictors = TRUE, replace sigma2_X (the focal predictor's
+  # TOTAL variance) with its UNIQUE variance: the variance remaining after the
+  # part linearly predictable from the other fixed-effect predictors is removed.
+  # The coefficient B is already partial; multiplying it by the residualized
+  # variance yields a semipartial variance-explained measure that declines as a
+  # predictor's redundancy with the others increases (matching the unique-
+  # variance / DEE target). Off by default; for centered, orthogonal designs it
+  # is identical to the default. Applied to single (non-interaction) predictors
+  # only; for interactions, supply 'var_x' if a residualized product variance is
+  # required.
+  if (partial_predictors && is.null(var_x) && length(effect_vars) == 1 &&
+      effect_vars != "(Intercept)" && !is.null(Xmat)) {
+    focal <- if (effect %in% colnames(Xmat)) effect else {
+      hits <- colnames(Xmat)[startsWith(colnames(Xmat), effect_vars) &
+                               !grepl(":", colnames(Xmat))]
+      if (length(hits) == 1) hits else NA_character_
+    }
+    others <- setdiff(colnames(Xmat), c("(Intercept)", focal))
+    if (!is.na(focal) && length(others) > 0) {
+      x_focal <- Xmat[, focal]
+      Xo      <- Xmat[, others, drop = FALSE]
+      # residual of focal regressed on the other predictors
+      x_resid <- tryCatch(
+        stats::residuals(stats::lm.fit(cbind(1, Xo), x_focal)),
+        error = function(e) NULL)
+      if (!is.null(x_resid)) {
+        sigma2_X <- stats::var(x_resid)
+      } else {
+        warning("partial_predictors = TRUE: could not residualize '", effect,
+                "'; using total variance.")
+      }
+    }
+    # If there are no other predictors, unique == total: sigma2_X unchanged.
+  }
+
   variance_effect <- B^2 * sigma2_X
 
 
@@ -699,6 +760,7 @@ eta2p <- function(model, effect, data,
               effect_level = effect_level,
               var_x        = var_x,
               operative    = operative,
+              partial_predictors = partial_predictors,
               ci           = FALSE,          # prevent recursion
               verbose      = FALSE),
         error = function(e) NULL)
@@ -881,6 +943,7 @@ batch_eta2p <- function(model, data,
                         cross_vars   = NULL,
                         nest_vars    = NULL,
                         operative    = FALSE,
+                        partial_predictors = FALSE,
                         verbose      = FALSE) {
 
   design <- match.arg(design)
@@ -900,6 +963,7 @@ batch_eta2p <- function(model, data,
                    cross_vars = cross_vars,
                    nest_vars  = nest_vars,
                    operative  = operative,
+                   partial_predictors = partial_predictors,
                    verbose    = FALSE)
 
       df <- data.frame(

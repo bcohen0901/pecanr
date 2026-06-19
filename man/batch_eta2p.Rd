@@ -13,6 +13,7 @@ batch_eta2p(
   cross_vars = NULL,
   nest_vars = NULL,
   operative = FALSE,
+  partial_predictors = FALSE,
   verbose = FALSE
 )
 }
@@ -45,6 +46,17 @@ within models). Required for \code{design = "nested"} or
 \item{operative}{Logical. If \code{TRUE}, calculates operative effect size
 (excludes variance components that do not contribute to the SE of the
 effect). Default is \code{FALSE}.}
+
+\item{partial_predictors}{Logical. If \code{TRUE}, the variance attributed to
+a single (non-interaction) predictor is its \emph{unique} (semipartial)
+variance -- the variance remaining after removing the part linearly
+predictable from the other fixed-effect predictors -- rather than its total
+variance. This yields a semipartial variance-explained measure that
+declines as a predictor's redundancy with the others increases. For
+centered, orthogonal designs it is identical to the default; it matters only
+when predictors are correlated. Default is \code{FALSE} (use the total
+variance of the predictor). See Details. Has no effect on interaction terms
+or when \code{var_x} is supplied.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
 \code{FALSE}.}

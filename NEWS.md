@@ -1,7 +1,7 @@
 # pecanr 0.3.0
- 
+
 ## New features
- 
+
 * New function `eta2p_omnibus()` computes a single factor-level partial
   eta-squared for a multi-level factor or multi-df interaction, corresponding
   to the omnibus (multi-df) test of that effect rather than to individual
@@ -24,9 +24,15 @@
   sampling distribution, the interval is obtained by simulating from the fitted
   model (`lme4::bootMer`), refitting, and recomputing the effect size on each
   replicate. This is opt-in, as each replicate refits the model.
+* `eta2p()` and `batch_eta2p()` gain a `partial_predictors` argument. When
+  `TRUE`, the variance attributed to a single (non-interaction) predictor is its
+  unique (semipartial) variance -- residualized on the other fixed-effect
+  predictors -- rather than its total variance, yielding a measure that declines
+  with a predictor's redundancy under correlation. Defaults to `FALSE`; for
+  centered, orthogonal designs the two are identical.
 
 ## Changes
- 
+
 * Interaction effect sizes are now computed from the mean-centered constituent
   predictors: each component of an interaction is centered before forming the
   product whose variance enters the numerator (the product itself is not
@@ -41,7 +47,7 @@
   matching `batch_eta2p()`. Pass `verbose = TRUE` to restore printed output.
 
 ## Bug fixes
- 
+
 * Operative effect sizes (`operative = TRUE`) now work correctly for factor
   predictors. Within/between classification previously matched the focal
   effect's name directly against the data columns, which failed for a factor
@@ -57,9 +63,9 @@
   frame and included.
 
 # pecanr 0.2.0
- 
+
 ## New features
- 
+
 * `eta2p()` and `batch_eta2p()` now support `design = "mixed"` for models with
   both crossed and nested random effects simultaneously. A canonical example is
   participants viewing multiple photos of each model: photos are nested within
@@ -67,16 +73,16 @@
   `cross_vars` and `nest_vars` to use this design.
 
 ## Bug fixes
- 
+
 * Fixed a bug in operative effect size calculation for crossed designs.
   `detect_within_between()` previously used hardcoded `$subj` and `$item` keys
   to classify grouping factors as within or between, which caused intercept
   variances to be silently omitted from the operative denominator. Keys are now
   indexed by actual variable name, so the correct components are always
   included.
-  
+
 ## Breaking changes
- 
+
 * `batch_eta2p()` output columns for within/between status are now named
   `within_<varname>` (e.g., `within_participant`, `within_item`) rather than
   the hardcoded `within_subj` and `within_item`. Code that references these
@@ -87,7 +93,7 @@
   regardless of whether the effect was within or between those factors.
 
 # pecanr 0.1.2
- 
+
 * Initial CRAN release.
 * `eta2p()` computes partial eta-squared for a single fixed effect in a fitted
   `lmer` model, supporting crossed and nested random effects structures.

@@ -16,6 +16,7 @@ eta2p(
   effect_level = NULL,
   var_x = NULL,
   operative = FALSE,
+  partial_predictors = FALSE,
   ci = FALSE,
   ci_level = 0.95,
   n_boot = 1000,
@@ -73,6 +74,17 @@ predictor variance is known (e.g., from design: a +/-1 binary predictor has
 \item{operative}{Logical. If \code{TRUE}, calculates operative effect size
 (excludes variance components that do not contribute to the SE of the
 effect). Default is \code{FALSE}.}
+
+\item{partial_predictors}{Logical. If \code{TRUE}, the variance attributed to
+a single (non-interaction) predictor is its \emph{unique} (semipartial)
+variance -- the variance remaining after removing the part linearly
+predictable from the other fixed-effect predictors -- rather than its total
+variance. This yields a semipartial variance-explained measure that
+declines as a predictor's redundancy with the others increases. For
+centered, orthogonal designs it is identical to the default; it matters only
+when predictors are correlated. Default is \code{FALSE} (use the total
+variance of the predictor). See Details. Has no effect on interaction terms
+or when \code{var_x} is supplied.}
 
 \item{ci}{Logical. If \code{TRUE}, computes a confidence interval for
 \code{eta2p} by parametric bootstrap (\code{lme4::bootMer}): new responses
@@ -170,15 +182,24 @@ location-invariant), but the random-slope translation
 center continuous predictors before fitting.
 }
 Under correlated predictors, each \eqn{b} is a partial coefficient (it
-controls for the other predictors), but it is multiplied by the predictor's
-\emph{total} variance \eqn{\sigma^2_X}, not its unique (residualized)
-variance. The per-predictor values are therefore partial (conditional)
-effect sizes that are exact for orthogonal designs and do not partition total
-variance when predictors are correlated -- as is true of partial eta-squared
-generally. For unique-variance (semipartial) behavior under correlation,
-residualize the predictor of interest on the others before fitting (or supply
-the residualized variance via \code{var_x}). See Rights & Sterba (2019) on
-the partial-versus-total distinction.
+controls for the other predictors), but by default it is multiplied by the
+predictor's \emph{total} variance \eqn{\sigma^2_X}, not its unique
+(residualized) variance. The per-predictor values are therefore partial
+(conditional) effect sizes that are exact for orthogonal designs and do not
+partition total variance when predictors are correlated -- as is true of
+partial eta-squared generally.
+
+For unique-variance (semipartial) behavior under correlation, set
+\code{partial_predictors = TRUE}. This residualizes the focal predictor on
+the other fixed-effect predictors before taking its variance, so the variance
+attributed to it is \eqn{b^2 \, \mathrm{Var}(X \mid X_{others})}. The
+resulting value declines as the predictor's redundancy with the others
+increases, matching the unique-variance target estimated by an explained-
+error (model-comparison) approach. For centered, orthogonal designs the two
+options coincide exactly, because the covariance among predictors is zero.
+The choice is independent of the operative option, which concerns the error
+denominator rather than the numerator. See Rights & Sterba (2019) on the
+partial-versus-total distinction.
 }
 
 \subsection{General vs. operative effect sizes}{
@@ -307,6 +328,11 @@ eta2p(model_f, "grp", crossed_data,
 eta2p(model_c, "condition", crossed_data,
       design = "crossed", cross_vars = c("subject", "item"),
       operative = TRUE)
+
+# --- Unique (semipartial) variance for correlated predictors ---
+eta2p(model_c, "condition", crossed_data,
+      design = "crossed", cross_vars = c("subject", "item"),
+      partial_predictors = TRUE)
 
 # --- Confidence interval by parametric bootstrap ---
 eta2p(model_c, "condition", crossed_data,
