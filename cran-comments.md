@@ -9,7 +9,7 @@
 
 ## R CMD CHECK results
 0 errors | 0 warnings | 0 notes
-
+ 
 ## Changes since last submission
 * New function `eta2p_omnibus()` computes a single factor-level partial
   eta-squared for a multi-level factor or multi-df interaction, corresponding
@@ -22,9 +22,14 @@
 * `eta2p()` gains an optional parametric-bootstrap confidence interval
   (`ci = TRUE`, with `ci_level`, `n_boot`, and `seed` arguments) via
   `lme4::bootMer()`.
-* `eta2p()` and `batch_eta2p()` gain a `partial_predictors` argument for
-  unique (semipartial) variance under correlated predictors (residualizing the
-  focal predictor on the others); defaults to `FALSE`.
+* `eta2p()` and `batch_eta2p()` gain a `partial_predictors` argument
+  controlling the numerator for single (non-interaction) predictors. By default
+  (`TRUE`) the variance attributed to a predictor is its unique (semipartial)
+  variance -- equivalently its total variance times its tolerance -- so it
+  reflects only the predictor's unique contribution under correlation. Set
+  `partial_predictors = FALSE` for the previous total-variance numerator. For
+  centered, orthogonal designs the two are identical, so correlated-predictor
+  models are the only ones affected.
 * Interaction effect sizes are now computed from the mean-centered constituent
   predictors, making the interaction effect size invariant to the location of
   its constituent predictors. For models with uncentered continuous
