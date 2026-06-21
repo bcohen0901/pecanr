@@ -24,15 +24,25 @@
   sampling distribution, the interval is obtained by simulating from the fitted
   model (`lme4::bootMer`), refitting, and recomputing the effect size on each
   replicate. This is opt-in, as each replicate refits the model.
-* `eta2p()` and `batch_eta2p()` gain a `partial_predictors` argument. When
-  `TRUE`, the variance attributed to a single (non-interaction) predictor is its
-  unique (semipartial) variance -- residualized on the other fixed-effect
-  predictors -- rather than its total variance, yielding a measure that declines
-  with a predictor's redundancy under correlation. Defaults to `FALSE`; for
-  centered, orthogonal designs the two are identical.
+* `eta2p()` and `batch_eta2p()` gain a `partial_predictors` argument controlling
+  the numerator for single (non-interaction) predictors. When `TRUE` (the
+  default), the variance attributed to a predictor is its unique (semipartial)
+  variance -- equivalently its total variance times its tolerance,
+  `Var(X) * tol(X)` -- so it reflects only the predictor's unique contribution
+  and declines with redundancy under correlation. Set `partial_predictors =
+  FALSE` for the previous total-variance (raw) numerator. For centered,
+  orthogonal designs the two are identical, so this affects only models with
+  correlated predictors.
 
 ## Changes
 
+* For single (non-interaction) predictors, the default numerator now uses each
+  predictor's unique (semipartial) variance rather than its total variance (see
+  `partial_predictors` above). For centered, orthogonal designs this is
+  identical to previous behavior; for models with correlated predictors, the
+  default effect sizes will be smaller than in earlier versions, reflecting only
+  each predictor's unique contribution. Set `partial_predictors = FALSE` to
+  reproduce the previous total-variance behavior.
 * Interaction effect sizes are now computed from the mean-centered constituent
   predictors: each component of an interaction is centered before forming the
   product whose variance enters the numerator (the product itself is not

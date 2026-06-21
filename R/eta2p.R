@@ -42,16 +42,18 @@
 #' @param operative Logical. If \code{TRUE}, calculates operative effect size
 #'   (excludes variance components that do not contribute to the SE of the
 #'   effect). Default is \code{FALSE}.
-#' @param partial_predictors Logical. If \code{TRUE}, the variance attributed to
-#'   a single (non-interaction) predictor is its \emph{unique} (semipartial)
-#'   variance -- the variance remaining after removing the part linearly
-#'   predictable from the other fixed-effect predictors -- rather than its total
-#'   variance. This yields a semipartial variance-explained measure that
-#'   declines as a predictor's redundancy with the others increases. For
-#'   centered, orthogonal designs it is identical to the default; it matters only
-#'   when predictors are correlated. Default is \code{FALSE} (use the total
-#'   variance of the predictor). See Details. Has no effect on interaction terms
-#'   or when \code{var_x} is supplied.
+#' @param partial_predictors Logical. If \code{TRUE} (the default), the variance
+#'   attributed to a single (non-interaction) predictor is its \emph{unique}
+#'   (semipartial) variance -- the variance remaining after removing the part
+#'   linearly predictable from the other fixed-effect predictors, equivalently
+#'   \eqn{\mathrm{Var}(X) \times \mathrm{tol}(X)} where \eqn{\mathrm{tol}} is the
+#'   predictor's tolerance. This yields a measure that reflects only the unique
+#'   contribution of the predictor and declines as its redundancy with the
+#'   others increases. If \code{FALSE}, the predictor's \emph{total} variance is
+#'   used instead (the raw decomposition). For centered, orthogonal designs the
+#'   two are identical; they differ only when predictors are correlated. See
+#'   Details. Has no effect on interaction terms (whose components are always
+#'   centered) or when \code{var_x} is supplied.
 #' @param ci Logical. If \code{TRUE}, computes a confidence interval for
 #'   \code{eta2p} by parametric bootstrap (\code{lme4::bootMer}): new responses
 #'   are simulated from the fitted model, the model is refit, and \code{eta2p}
@@ -139,24 +141,32 @@
 #'     center continuous predictors before fitting.
 #' }
 #' Under correlated predictors, each \eqn{b} is a partial coefficient (it
-#' controls for the other predictors), but by default it is multiplied by the
-#' predictor's \emph{total} variance \eqn{\sigma^2_X}, not its unique
-#' (residualized) variance. The per-predictor values are therefore partial
-#' (conditional) effect sizes that are exact for orthogonal designs and do not
-#' partition total variance when predictors are correlated -- as is true of
-#' partial eta-squared generally.
-#'
-#' For unique-variance (semipartial) behavior under correlation, set
-#' \code{partial_predictors = TRUE}. This residualizes the focal predictor on
-#' the other fixed-effect predictors before taking its variance, so the variance
-#' attributed to it is \eqn{b^2 \, \mathrm{Var}(X \mid X_{others})}. The
-#' resulting value declines as the predictor's redundancy with the others
+#' controls for the other predictors). By default (\code{partial_predictors =
+#' TRUE}) it is multiplied by the predictor's \emph{unique} variance -- the
+#' variance remaining after the part linearly predictable from the other
+#' predictors is removed -- so the variance attributed to the predictor is
+#' \deqn{b^2 \, \mathrm{Var}(X \mid X_{others}) = b^2 \, \mathrm{Var}(X) \,
+#'       \mathrm{tol}(X),}
+#' where \eqn{\mathrm{tol}(X) = 1 - R^2_{X \sim X_{others}}} is the predictor's
+#' tolerance. (The two forms are algebraically identical.) This yields a
+#' semipartial variance-explained measure: it reflects only the unique
+#' contribution of the predictor and declines as its redundancy with the others
 #' increases, matching the unique-variance target estimated by an explained-
-#' error (model-comparison) approach. For centered, orthogonal designs the two
-#' options coincide exactly, because the covariance among predictors is zero.
-#' The choice is independent of the operative option, which concerns the error
-#' denominator rather than the numerator. See Rights & Sterba (2019) on the
-#' partial-versus-total distinction.
+#' error (model-comparison) approach.
+#'
+#' Setting \code{partial_predictors = FALSE} instead uses the predictor's
+#' \emph{total} variance \eqn{\sigma^2_X}. The resulting per-predictor values
+#' are partial (conditional) effect sizes that do not isolate unique variance
+#' when predictors are correlated. For centered, orthogonal designs the two
+#' options coincide exactly, because the covariance among predictors is zero, so
+#' the choice matters only under collinearity.
+#'
+#' The tolerance correction is also what makes the interaction handling
+#' location-invariant: centering an interaction's components is equivalent to
+#' the \eqn{\mathrm{Var} \times \mathrm{tol}} of the product, which is constant
+#' across re-centering. The choice is independent of the operative option, which
+#' concerns the error denominator rather than the numerator. See Rights & Sterba
+#' (2019) on the partial-versus-total distinction.
 #' }
 #'
 #' \subsection{General vs. operative effect sizes}{
@@ -167,6 +177,11 @@
 #' (both crossed and nested) is independently classified as
 #' \code{"within"} or \code{"between"} the focal effect; between-subjects
 #' intercept variances are excluded from the operative denominator.
+#'
+#' The operative option concerns only the denominator; it is independent of the
+#' \code{partial_predictors} setting, which controls the numerator. The two
+#' compose: an operative effect size uses the same numerator a general one would
+#' (unique variance by default), paired with the reduced operative denominator.
 #' }
 #'
 #' \subsection{Mixed designs}{
@@ -227,7 +242,7 @@
 #' \donttest{
 #' library(lme4)
 #'
-#' # --- Two crossed factors (backward-compatible call) ---
+#' #  Two crossed factors (backward-compatible call)
 #' set.seed(42)
 #' crossed_data <- data.frame(
 #'   y         = rnorm(120),
@@ -242,7 +257,7 @@
 #'       subj_var = "subject",
 #'       item_var = "item")
 #'
-#' # --- Three crossed factors using cross_vars ---
+#' #  Three crossed factors using cross_vars
 #' set.seed(42)
 #' three_way_data <- data.frame(
 #'   y         = rnorm(180),
@@ -258,7 +273,7 @@
 #'       design     = "crossed",
 #'       cross_vars = c("subject", "item", "rater"))
 #'
-#' # --- Mixed design: photos nested within models, crossed with participants ---
+#' #  Mixed design: photos nested within models, crossed with participants
 #' # Participants each view multiple photos of multiple models.
 #' # Photos are nested within models (each photo belongs to one model),
 #' # but both levels are crossed with participants.
@@ -284,41 +299,41 @@
 #'       cross_vars = "participant",
 #'       nest_vars  = c("photo_id", "model_id"))
 #'
-#' # --- Supply predictor variance directly (var_x) ---
+#' #  Supply predictor variance directly (var_x)
 #' eta2p(model_c, "condition", crossed_data,
 #'       design     = "crossed",
 #'       cross_vars = c("subject", "item"),
 #'       var_x      = 1)   # +/-1 binary predictor: var = 1 by design
 #'
-#' # --- Factor predictor (no manual recoding needed) ---
+#' #  Factor predictor (no manual recoding needed)
 #' crossed_data$grp <- factor(rep(c("A", "B"), 60))
 #' model_f <- lmer(y ~ grp + (1 | subject) + (1 | item), data = crossed_data)
 #' # accepts the variable name "grp"; resolves to the coefficient automatically
 #' eta2p(model_f, "grp", crossed_data,
 #'       design = "crossed", cross_vars = c("subject", "item"))
 #'
-#' # --- Operative effect size ---
+#' #  Operative effect size
 #' eta2p(model_c, "condition", crossed_data,
 #'       design = "crossed", cross_vars = c("subject", "item"),
 #'       operative = TRUE)
 #'
-#' # --- Unique (semipartial) variance for correlated predictors ---
+#' #  Total-variance (raw) numerator instead of the default unique variance
 #' eta2p(model_c, "condition", crossed_data,
 #'       design = "crossed", cross_vars = c("subject", "item"),
-#'       partial_predictors = TRUE)
+#'       partial_predictors = FALSE)
 #'
-#' # --- Confidence interval by parametric bootstrap ---
+#' #  Confidence interval by parametric bootstrap
 #' eta2p(model_c, "condition", crossed_data,
 #'       design = "crossed", cross_vars = c("subject", "item"),
 #'       ci = TRUE, n_boot = 200, seed = 1)
 #'
-#' # --- Omnibus effect size for a multi-level factor ---
+#' #  Omnibus effect size for a multi-level factor
 #' crossed_data$emo <- factor(rep(c("a", "b", "c", "d"), 30))
 #' model_e <- lmer(y ~ emo + (1 | subject) + (1 | item), data = crossed_data)
 #' eta2p_omnibus(model_e, "emo", crossed_data,
 #'               design = "crossed", cross_vars = c("subject", "item"))
 #'
-#' # --- All fixed effects at once (per-coefficient) ---
+#' #  All fixed effects at once (per-coefficient)
 #' batch_eta2p(model_c, crossed_data,
 #'             design = "crossed", cross_vars = c("subject", "item"))
 #' }
@@ -339,7 +354,7 @@ eta2p <- function(model, effect, data,
                   effect_level = NULL,
                   var_x        = NULL,
                   operative    = FALSE,
-                  partial_predictors = FALSE,
+                  partial_predictors = TRUE,
                   ci           = FALSE,
                   ci_level     = 0.95,
                   n_boot       = 1000,
@@ -380,7 +395,7 @@ eta2p <- function(model, effect, data,
 
   # RESOLVE GROUPING VARIABLES PER DESIGN
 
-  # --- crossed ---
+  #  crossed
   if (design == "crossed") {
 
     if (!is.null(cross_vars)) {
@@ -404,7 +419,7 @@ eta2p <- function(model, effect, data,
     item_var <- if (length(cross_vars) >= 2) cross_vars[2] else NULL
   }
 
-  # --- nested ---
+  #  nested
   if (design == "nested") {
     if (is.null(nest_vars))
       stop("For nested designs, 'nest_vars' is required.")
@@ -414,7 +429,7 @@ eta2p <- function(model, effect, data,
            paste(missing_vars, collapse = ", "))
   }
 
-  # --- mixed ---
+  #  mixed
   if (design == "mixed") {
 
     # Must supply both sets of variables
@@ -943,7 +958,7 @@ batch_eta2p <- function(model, data,
                         cross_vars   = NULL,
                         nest_vars    = NULL,
                         operative    = FALSE,
-                        partial_predictors = FALSE,
+                        partial_predictors = TRUE,
                         verbose      = FALSE) {
 
   design <- match.arg(design)
@@ -1373,11 +1388,11 @@ calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level, mode
                              within_between = NULL,
                              effect_vars    = NULL) {
 
-  # --- residual ---
+  #  residual
   residual_var <- vc$vcov[vc$grp == "Residual"]
   residual_var <- if (length(residual_var) == 0) 0 else residual_var[1]
 
-  # --- crossed intercepts and slopes ---
+  #  crossed intercepts and slopes
   cross_int   <- setNames(numeric(length(cross_vars)), cross_vars)
   cross_slope <- setNames(vector("list", length(cross_vars)), cross_vars)
 
@@ -1403,7 +1418,7 @@ calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level, mode
     cross_slope[[cv]] <- contrib
   }
 
-  # --- nested intercepts and slopes (reuse nested logic) ---
+  #  nested intercepts and slopes (reuse nested logic)
   nested_result <- calc_error_nested(vc, data, nest_vars, effect_level,
                                      model       = model,
                                      operative   = FALSE,   # handle manually below

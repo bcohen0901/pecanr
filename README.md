@@ -32,8 +32,9 @@ approach that translates slope variances to the outcome scale.
   F or chi-square test
 - **Operative effect sizes** – excluding variance components that don’t
   contribute to the standard error of the tested effect
-- **Unique (semipartial) variance** – optional residualization for
-  correlated predictors via `partial_predictors = TRUE`
+- **Unique variance** – per-predictor effect sizes use unique (semipartial)
+  variance by default for correlated predictors; `partial_predictors = FALSE`
+  for the raw total-variance numerator
 - **Confidence intervals** – optional, via parametric bootstrap
 
 ## Installation
@@ -158,20 +159,23 @@ eta2p(model, effect = "condition", data = my_data,
       operative  = TRUE)
 ```
 
-### Unique (semipartial) variance for correlated predictors
+### Unique variance and correlated predictors
 
-By default the variance attributed to a predictor uses its total variance,
-so the per-predictor effect sizes are partial (conditional) and are exact
-for orthogonal designs but do not partition variance when predictors are
-correlated. Set `partial_predictors = TRUE` to instead use each predictor's
-unique variance (residualized on the others), which declines as redundancy
-increases. For centered, orthogonal designs the two are identical.
+By default, the variance attributed to a single predictor is its **unique**
+(semipartial) variance — its total variance times its tolerance,
+`Var(X) * tol(X)` — so each effect size reflects only the predictor's unique
+contribution and declines as its redundancy with the other predictors
+increases. For centered, orthogonal designs this is identical to using the
+total variance, so it matters only when predictors are correlated.
+
+To use the total-variance (raw) numerator instead, set
+`partial_predictors = FALSE`:
 
 ``` r
 eta2p(model, effect = "x1", data = my_data,
       design     = "crossed",
       cross_vars = c("subject", "item"),
-      partial_predictors = TRUE)
+      partial_predictors = FALSE)
 ```
 
 ### Confidence intervals

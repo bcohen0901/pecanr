@@ -13,7 +13,7 @@ batch_eta2p(
   cross_vars = NULL,
   nest_vars = NULL,
   operative = FALSE,
-  partial_predictors = FALSE,
+  partial_predictors = TRUE,
   verbose = FALSE
 )
 }
@@ -47,16 +47,18 @@ within models). Required for \code{design = "nested"} or
 (excludes variance components that do not contribute to the SE of the
 effect). Default is \code{FALSE}.}
 
-\item{partial_predictors}{Logical. If \code{TRUE}, the variance attributed to
-a single (non-interaction) predictor is its \emph{unique} (semipartial)
-variance -- the variance remaining after removing the part linearly
-predictable from the other fixed-effect predictors -- rather than its total
-variance. This yields a semipartial variance-explained measure that
-declines as a predictor's redundancy with the others increases. For
-centered, orthogonal designs it is identical to the default; it matters only
-when predictors are correlated. Default is \code{FALSE} (use the total
-variance of the predictor). See Details. Has no effect on interaction terms
-or when \code{var_x} is supplied.}
+\item{partial_predictors}{Logical. If \code{TRUE} (the default), the variance
+attributed to a single (non-interaction) predictor is its \emph{unique}
+(semipartial) variance -- the variance remaining after removing the part
+linearly predictable from the other fixed-effect predictors, equivalently
+\eqn{\mathrm{Var}(X) \times \mathrm{tol}(X)} where \eqn{\mathrm{tol}} is the
+predictor's tolerance. This yields a measure that reflects only the unique
+contribution of the predictor and declines as its redundancy with the
+others increases. If \code{FALSE}, the predictor's \emph{total} variance is
+used instead (the raw decomposition). For centered, orthogonal designs the
+two are identical; they differ only when predictors are correlated. See
+Details. Has no effect on interaction terms (whose components are always
+centered) or when \code{var_x} is supplied.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
 \code{FALSE}.}
