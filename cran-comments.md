@@ -1,15 +1,23 @@
 # CRAN submission comments -- pecanr 0.3.0
 
 ## Test environments
-* Local: macOS [VERSION], R 4.5.3 (aarch64-apple-darwin20)
-* devtools::check_win_devel(): Windows Server, R-devel -- [FILL IN RESULTS]
-* rhub::rhub_check(): linux (ubuntu-latest) -- [FILL IN RESULTS]
-* rhub::rhub_check(): windows (windows-latest) -- [FILL IN RESULTS]
-* rhub::rhub_check(): atlas (Fedora Linux) -- [FILL IN RESULTS]
+* Local: macOS Tahoe 26.2, R 4.5.3 (aarch64-apple-darwin20) -- 0 errors, 0 warnings, 0 notes
+* devtools::check_win_devel(): Windows Server, R-devel -- 0 errors, 0 warnings, 1 note
+* rhub::rhub_check(): linux (ubuntu-latest), R-devel -- 0 errors, 0 warnings, 0 notes
+* rhub::rhub_check(): macos-arm64 (macos-latest), R-* -- 0 errors, 0 warnings, 0 notes
+* rhub::rhub_check(): windows (windows-latest), R-* -- 0 errors, 0 warnings, 0 notes
 
 ## R CMD CHECK results
-0 errors | 0 warnings | 0 notes
- 
+Local and R-hub (linux, macos-arm64, windows): 0 errors | 0 warnings | 0 notes.
+win-builder R-devel: 0 errors | 0 warnings | 1 note (see Notes).
+
+## Notes
+* On win-builder R-devel, the CRAN incoming feasibility check flagged:
+  "Possibly misspelled words in DESCRIPTION: df, semipartial". These are not
+  misspellings: "df" abbreviates degrees of freedom, and "semipartial" is the
+  standard statistical term for the variance-explained measure the package
+  computes. This note did not appear on the local or R-hub checks.
+
 ## Changes since last submission
 * New function `eta2p_omnibus()` computes a single factor-level partial
   eta-squared for a multi-level factor or multi-df interaction, corresponding
