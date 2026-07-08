@@ -1,4 +1,8 @@
-# CRAN submission comments -- pecanr 0.3.0
+# CRAN submission comments -- pecanr 0.3.1
+
+This is a patch release fixing two bugs in the error-variance computation
+that silently inflated effect sizes for common model specifications (see
+Changes below). We are submitting it promptly after discovering the bugs.
 
 ## Test environments
 * Local: macOS Tahoe 26.2, R 4.5.3 (aarch64-apple-darwin20) -- 0 errors, 0 warnings, 0 notes
@@ -12,47 +16,38 @@ Local and R-hub (linux, macos-arm64, windows): 0 errors | 0 warnings | 0 notes.
 win-builder R-devel: 0 errors | 0 warnings | 1 note (see Notes).
 
 ## Notes
-* On win-builder R-devel, the CRAN incoming feasibility check flagged:
+
+* On win-builder R-devel, the 0.3.0 CRAN incoming feasibility check flagged:
   "Possibly misspelled words in DESCRIPTION: df, semipartial". These are not
   misspellings: "df" abbreviates degrees of freedom, and "semipartial" is the
   standard statistical term for the variance-explained measure the package
-  computes. This note did not appear on the local or R-hub checks.
+  computes. The DESCRIPTION text is unchanged in this release, so the same
+  note may appear again.
 
 ## Changes since last submission
-* New function `eta2p_omnibus()` computes a single factor-level partial
-  eta-squared for a multi-level factor or multi-df interaction, corresponding
-  to the omnibus (multi-df) test of that effect rather than to individual
-  contrasts.
-* `eta2p()` and `batch_eta2p()` now accept factor predictors directly (by
-  variable name or coefficient name), reading predictor variances and factor
-  random slopes from the model design matrix and model frame; manual recoding
-  of factors to numeric is no longer required.
-* `eta2p()` gains an optional parametric-bootstrap confidence interval
-  (`ci = TRUE`, with `ci_level`, `n_boot`, and `seed` arguments) via
-  `lme4::bootMer()`.
-* `eta2p()` and `batch_eta2p()` gain a `partial_predictors` argument
-  controlling the numerator for single (non-interaction) predictors. By default
-  (`TRUE`) the variance attributed to a predictor is its unique (semipartial)
-  variance -- equivalently its total variance times its tolerance -- so it
-  reflects only the predictor's unique contribution under correlation. Set
-  `partial_predictors = FALSE` for the previous total-variance numerator. For
-  centered, orthogonal designs the two are identical, so correlated-predictor
-  models are the only ones affected.
-* Interaction effect sizes are now computed from the mean-centered constituent
-  predictors, making the interaction effect size invariant to the location of
-  its constituent predictors. For models with uncentered continuous
-  interaction components, interaction effect sizes may differ from those
-  produced by earlier versions.
-* The default for `verbose` in `eta2p()` is now `FALSE`, matching
-  `batch_eta2p()`.
-* Fixed a bug in which operative effect sizes (`operative = TRUE`) could
-  misclassify factor grouping variables as within/between, because the focal
-  effect's coefficient name (e.g. `"Age75"`) was matched directly against data
-  columns; coefficient names are now resolved to their underlying variable
-  before classification.
-* Fixed a bug in which the random slope of an interaction term (e.g. a random
-  slope on `x1:x2`) was silently omitted from the error denominator when its
-  random-effect name did not match the fixed-effect product column.
+
+This release contains only bug fixes and their regression tests; there are no
+API changes.
+
+* Fixed a bug in which random-effect terms stored under numeric-suffixed
+  group names were silently dropped from the error variance. lme4 stores
+  multiple random-effect terms for the same grouping factor -- as produced by
+  the double-bar syntax `(x || g)` or by explicit `(1 | g) + (0 + x | g)`
+  terms -- under group names `"g"`, `"g.1"`, `"g.2"`, etc. The error-variance
+  calculators matched only the base name, so components under suffixed names
+  (typically random slopes) were omitted from the denominator, inflating
+  eta2p. Affected all three design calculators (crossed, nested, mixed) and
+  both general and operative effect sizes.
+* Fixed a related bug for nested-syntax grouping terms such as
+  `(1 | photo:model)`: `as.data.frame(VarCorr())` reports the combined group
+  name dot-separated on current lme4 (e.g. `"photo.model"`), so the previous
+  colon-based fallback never matched and the component was silently dropped
+  in nested and mixed designs.
+* Added a regression test suite (`tests/testthat/test-double-bar.R`) that
+  verifies the error variance against a direct hand computation from
+  `VarCorr()` across crossed, nested, and mixed designs for the affected
+  syntaxes, and guards against false group-name matches.
 
 ## Downstream dependencies
+
 There are no downstream dependencies.

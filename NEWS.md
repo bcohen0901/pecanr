@@ -1,7 +1,46 @@
+# pecanr 0.3.1
+ 
+## Bug fixes
+ 
+* Fixed a bug in which random-effect terms stored under numeric-suffixed group
+  names were silently dropped from the error variance. lme4 stores multiple
+  random-effect terms for the same grouping factor -- as produced by the
+  double-bar syntax `(x || g)` or by explicit `(1 | g) + (0 + x | g)` terms --
+  under group names `"g"`, `"g.1"`, `"g.2"`, and so on. The error-variance
+  calculators matched only the base name, so every component under a suffixed
+  name (typically the random slope) was omitted from the denominator,
+  inflating the effect size. This affected all three design calculators
+  (crossed, nested, and mixed) and both general and operative effect sizes.
+* Fixed a related bug for nested-syntax grouping terms such as
+  `(1 | photo:model)`. On current lme4 (observed on 1.1-35),
+  `as.data.frame(VarCorr())` reports the combined group name dot-separated
+  (`"photo.model"`), so the previous colon-based fallback match never fired
+  and the component was silently dropped from the error variance in nested
+  and mixed designs -- including the mixed-design example in the package
+  documentation. Both separators are now matched.
+* **Effect sizes from earlier versions may change for affected models.**
+  If a model used the double-bar syntax, explicit uncorrelated random-effect
+  terms, or interaction-grouping terms like `(1 | a:b)`, the previously
+  reported eta2p values were too large (the error denominator was missing
+  components). Values for models specified with single-bar terms per grouping
+  factor (e.g. `(x | g)`) and simple `(1 | g)` intercepts are unchanged.
+  Single-bar and double-bar specifications of the same model now yield
+  closely agreeing effect sizes, as expected.
+
+## Testing
+ 
+* New regression test suite (`tests/testthat/test-double-bar.R`) verifying
+  that `eta2p()`'s error variance matches a direct hand computation from
+  `VarCorr()` (to numerical precision) across crossed, nested, and mixed
+  designs for double-bar terms, explicit `(1|g) + (0+x|g)` terms, multi-slope
+  double-bar terms including interaction slopes, and `(1 | a:b)` grouping.
+  Also guards against false matches (a grouping variable literally named
+  `"g.extra"` is not absorbed into `"g"`).
+
 # pecanr 0.3.0
-
+ 
 ## New features
-
+ 
 * New function `eta2p_omnibus()` computes a single factor-level partial
   eta-squared for a multi-level factor or multi-df interaction, corresponding
   to the omnibus (multi-df) test of that effect rather than to individual
@@ -35,7 +74,7 @@
   correlated predictors.
 
 ## Changes
-
+ 
 * For single (non-interaction) predictors, the default numerator now uses each
   predictor's unique (semipartial) variance rather than its total variance (see
   `partial_predictors` above). For centered, orthogonal designs this is
@@ -57,7 +96,7 @@
   matching `batch_eta2p()`. Pass `verbose = TRUE` to restore printed output.
 
 ## Bug fixes
-
+ 
 * Operative effect sizes (`operative = TRUE`) now work correctly for factor
   predictors. Within/between classification previously matched the focal
   effect's name directly against the data columns, which failed for a factor
@@ -71,11 +110,10 @@
   random-effect name did not match the fixed-effect product column. The
   contribution of interaction random slopes is now resolved from the model
   frame and included.
-
 # pecanr 0.2.0
-
+ 
 ## New features
-
+ 
 * `eta2p()` and `batch_eta2p()` now support `design = "mixed"` for models with
   both crossed and nested random effects simultaneously. A canonical example is
   participants viewing multiple photos of each model: photos are nested within
@@ -83,7 +121,7 @@
   `cross_vars` and `nest_vars` to use this design.
 
 ## Bug fixes
-
+ 
 * Fixed a bug in operative effect size calculation for crossed designs.
   `detect_within_between()` previously used hardcoded `$subj` and `$item` keys
   to classify grouping factors as within or between, which caused intercept
@@ -92,7 +130,7 @@
   included.
 
 ## Breaking changes
-
+ 
 * `batch_eta2p()` output columns for within/between status are now named
   `within_<varname>` (e.g., `within_participant`, `within_item`) rather than
   the hardcoded `within_subj` and `within_item`. Code that references these
@@ -103,7 +141,7 @@
   regardless of whether the effect was within or between those factors.
 
 # pecanr 0.1.2
-
+ 
 * Initial CRAN release.
 * `eta2p()` computes partial eta-squared for a single fixed effect in a fitted
   `lmer` model, supporting crossed and nested random effects structures.

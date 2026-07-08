@@ -1032,6 +1032,42 @@ batch_eta2p <- function(model, data,
 
 # INTERNAL HELPERS (not exported)
 
+# VarCorr group-name matching (0.3.1 bug fix)
+
+#' Match VarCorr group names belonging to a grouping factor.
+#'
+#' lme4 stores multiple random-effect terms for the same grouping factor --
+#' e.g. from (x || g), or (1 | g) + (0 + x | g) -- under suffixed group names
+#' "g", "g.1", "g.2", ... Matching only vc$grp == g silently drops every
+#' component stored under a suffixed name from the error term (the <= 0.3.0
+#' bug). This helper matches the base name and all numeric-suffixed variants.
+#' String comparison (startsWith + digit check) is used instead of a regex so
+#' grouping-variable names containing regex metacharacters are safe.
+#' @noRd
+match_re_groups <- function(grp, base) {
+  suffixed <- startsWith(grp, paste0(base, ".")) &
+    grepl("^[0-9]+$", substring(grp, nchar(base) + 2))
+  grp == base | suffixed
+}
+
+#' Match VarCorr group names of nested-syntax terms belonging to a factor.
+#'
+#' A term like (1 | photo:stimmodel) is stored by lme4 under a combined group
+#' name. Depending on the lme4 version, as.data.frame(VarCorr()) reports it
+#' colon-separated ("photo:stimmodel") or dot-separated ("photo.stimmodel" --
+#' observed on lme4 1.1-35). The <= 0.3.0 fallback matched only "^photo:",
+#' so on dot-separating versions the component was silently dropped from the
+#' error term. Match both separators (numeric-suffix variants of either form
+#' are covered because startsWith matches their prefix too). Caveat: a
+#' genuinely distinct grouping variable literally named "photo.something"
+#' would also match; list such variables explicitly in nest_vars/cross_vars
+#' so the exact base-name match claims them first.
+#' @noRd
+match_nested_groups <- function(grp, base) {
+  startsWith(grp, paste0(base, ":")) | startsWith(grp, paste0(base, "."))
+}
+
+
 # Within/between detection
 
 #' Classify crossed grouping factors as within or between (crossed design)
@@ -1221,12 +1257,18 @@ calc_error_crossed <- function(vc, data, cross_vars, model = NULL,
   factor_slope_vars     <- setNames(vector("list", length(cross_vars)), cross_vars)
 
   for (cv in cross_vars) {
-    int_row <- vc[vc$grp == cv &
+    # Match "cv" and suffixed variants "cv.1", "cv.2", ... (see
+    # match_re_groups): components from (x || cv) or (1|cv) + (0+x|cv) live
+    # under suffixed group names and were silently dropped in <= 0.3.0.
+    grp_match <- match_re_groups(vc$grp, cv)
+
+    int_row <- vc[grp_match &
                     vc$var1 == "(Intercept)" &
                     is.na(vc$var2), ]
-    factor_intercept_vars[cv] <- if (nrow(int_row) == 0) 0 else int_row$vcov[1]
+    factor_intercept_vars[cv] <- if (nrow(int_row) == 0) 0 else
+      sum(int_row$vcov)
 
-    slp_rows <- vc[vc$grp == cv &
+    slp_rows <- vc[grp_match &
                      !is.na(vc$var1) &
                      vc$var1 != "(Intercept)" &
                      is.na(vc$var2), ]
@@ -1296,32 +1338,31 @@ calc_error_nested <- function(vc, data, nest_vars, effect_level, model = NULL,
   residual_var <- if (length(residual_var) == 0) 0 else residual_var[1]
 
   level_intercept_vars <- sapply(nest_vars, function(v) {
-    row <- vc[vc$grp == v & vc$var1 == "(Intercept)" & is.na(vc$var2), ]
+    # base name + numeric suffixes (see match_re_groups), then the nested-
+    # syntax fallback "v:..." / "v...." (see match_nested_groups; lme4 1.1-35
+    # reports (1 | v:w) groups DOT-separated, so the old "^v:" grep never
+    # matched and the component was silently dropped in <= 0.3.0).
+    row <- vc[match_re_groups(vc$grp, v) &
+                vc$var1 == "(Intercept)" & is.na(vc$var2), ]
     if (nrow(row) == 0) {
-      nested_grp <- grep(paste0("^", v, ":"), vc$grp, value = TRUE)
-      if (length(nested_grp) > 0) {
-        row <- vc[vc$grp == nested_grp[1] &
-                    vc$var1 == "(Intercept)" &
-                    is.na(vc$var2), ]
-      }
+      row <- vc[match_nested_groups(vc$grp, v) &
+                  vc$var1 == "(Intercept)" &
+                  is.na(vc$var2), ]
     }
-    if (nrow(row) == 0) 0 else row$vcov[1]
+    if (nrow(row) == 0) 0 else sum(row$vcov)
   })
   names(level_intercept_vars) <- nest_vars
 
   level_slope_vars <- sapply(nest_vars, function(v) {
-    slp_rows <- vc[vc$grp == v &
+    slp_rows <- vc[match_re_groups(vc$grp, v) &
                      !is.na(vc$var1) &
                      vc$var1 != "(Intercept)" &
                      is.na(vc$var2), ]
     if (nrow(slp_rows) == 0) {
-      nested_grp <- grep(paste0("^", v, ":"), vc$grp, value = TRUE)
-      if (length(nested_grp) > 0) {
-        slp_rows <- vc[vc$grp == nested_grp[1] &
-                         !is.na(vc$var1) &
-                         vc$var1 != "(Intercept)" &
-                         is.na(vc$var2), ]
-      }
+      slp_rows <- vc[match_nested_groups(vc$grp, v) &
+                       !is.na(vc$var1) &
+                       vc$var1 != "(Intercept)" &
+                       is.na(vc$var2), ]
     }
     if (nrow(slp_rows) == 0) return(0)
 
@@ -1397,12 +1438,15 @@ calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level, mode
   cross_slope <- setNames(vector("list", length(cross_vars)), cross_vars)
 
   for (cv in cross_vars) {
-    int_row <- vc[vc$grp == cv &
+    # base name + numeric suffixes (see match_re_groups)
+    grp_match <- match_re_groups(vc$grp, cv)
+
+    int_row <- vc[grp_match &
                     vc$var1 == "(Intercept)" &
                     is.na(vc$var2), ]
-    cross_int[cv] <- if (nrow(int_row) == 0) 0 else int_row$vcov[1]
+    cross_int[cv] <- if (nrow(int_row) == 0) 0 else sum(int_row$vcov)
 
-    slp_rows <- vc[vc$grp == cv &
+    slp_rows <- vc[grp_match &
                      !is.na(vc$var1) &
                      vc$var1 != "(Intercept)" &
                      is.na(vc$var2), ]
@@ -1467,17 +1511,15 @@ calc_error_mixed <- function(vc, data, cross_vars, nest_vars, effect_level, mode
     # Operative nested slopes (only matching slopes at relevant levels)
     op_nest_slopes <- 0
     for (nv in relevant_nv) {
-      slp_rows <- vc[vc$grp == nv &
+      slp_rows <- vc[match_re_groups(vc$grp, nv) &
                        !is.na(vc$var1) &
                        vc$var1 != "(Intercept)" &
                        is.na(vc$var2), ]
       if (nrow(slp_rows) == 0) {
-        nested_grp <- grep(paste0("^", nv, ":"), vc$grp, value = TRUE)
-        if (length(nested_grp) > 0)
-          slp_rows <- vc[vc$grp == nested_grp[1] &
-                           !is.na(vc$var1) &
-                           vc$var1 != "(Intercept)" &
-                           is.na(vc$var2), ]
+        slp_rows <- vc[match_nested_groups(vc$grp, nv) &
+                         !is.na(vc$var1) &
+                         vc$var1 != "(Intercept)" &
+                         is.na(vc$var2), ]
       }
       for (i in seq_len(nrow(slp_rows))) {
         nm <- slp_rows$var1[i]

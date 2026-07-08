@@ -25,6 +25,9 @@ approach that translates slope variances to the outcome scale.
   within models, but both crossed with participants)
 - **Random slopes** – translated to the outcome scale via sigma^2_slope
   x sigma^2_X
+- **All random-effects syntaxes** – single-bar `(x | g)`, double-bar
+  `(x || g)`, explicit `(1 | g) + (0 + x | g)`, and interaction-grouping
+  `(1 | a:b)` terms are all matched correctly (as of 0.3.1)
 - **Factor predictors** – supplied directly, by variable name or
   coefficient name, with no manual recoding to numeric
 - **Omnibus effect sizes** – a single factor-level value for a
@@ -39,7 +42,13 @@ approach that translates slope variances to the outcome scale.
 
 ## Installation
 
-You can install the development version of pecanr from
+Install the released version from CRAN:
+
+``` r
+install.packages("pecanr")
+```
+
+Or the development version from
 [GitHub](https://github.com/bcohen0901/pecanr):
 
 ``` r
@@ -47,11 +56,13 @@ You can install the development version of pecanr from
 pak::pak("bcohen0901/pecanr")
 ```
 
-Once on CRAN:
-
-``` r
-install.packages("pecanr")
-```
+> **Upgrading from 0.3.0 or earlier?** Version 0.3.1 fixes two bugs that
+> silently dropped random-effect variance components from the error term
+> for models using the double-bar syntax `(x || g)`, explicit
+> `(1 | g) + (0 + x | g)` terms, or interaction-grouping terms like
+> `(1 | photo:model)`. Effect sizes for such models were previously too
+> large and will be smaller (correct) after upgrading. Models using only
+> single-bar terms are unaffected. See `NEWS.md`.
 
 ## Usage
 
