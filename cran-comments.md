@@ -6,14 +6,14 @@ Changes below). We are submitting it promptly after discovering the bugs.
 
 ## Test environments
 * Local: macOS Tahoe 26.2, R 4.5.3 (aarch64-apple-darwin20) -- 0 errors, 0 warnings, 0 notes
-* devtools::check_win_devel(): Windows Server, R-devel -- 0 errors, 0 warnings, 1 note
+* devtools::check_win_devel(): Windows Server, R-devel -- 0 errors, 0 warnings, 0 note
 * rhub::rhub_check(): linux (ubuntu-latest), R-devel -- 0 errors, 0 warnings, 0 notes
 * rhub::rhub_check(): macos-arm64 (macos-latest), R-* -- 0 errors, 0 warnings, 0 notes
 * rhub::rhub_check(): windows (windows-latest), R-* -- 0 errors, 0 warnings, 0 notes
 
 ## R CMD CHECK results
 Local and R-hub (linux, macos-arm64, windows): 0 errors | 0 warnings | 0 notes.
-win-builder R-devel: 0 errors | 0 warnings | 1 note (see Notes).
+win-builder R-devel: 0 errors | 0 warnings | 0 notes.
 
 ## Notes
 
