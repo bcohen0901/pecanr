@@ -1,3 +1,24 @@
+# pecanr 0.4.0
+
+## New features
+
+* `eta2p()` gains a `slope` argument: supply a hypothetical fixed-effect
+  coefficient (e.g. `slope = 0.03`) and the effect size is computed for that
+  slope, holding the predictor variance and the error structure fixed from the
+  model. Useful for sensitivity and power analyses (e.g. alongside **simr**).
+* The returned `eta2p_lmm` object now also reports the numerator ingredients:
+  `coefficient`, `var_x` (the predictor variance), `var_x_unique`, and
+  `tolerance`.
+* Added concise `print()` and comprehensive `summary()` methods for
+  `eta2p_lmm`. Printing an object now shows just the estimate; `summary()`
+  shows the coefficient, var(X), and the error-variance components.
+
+## Removed
+
+* `eta2p_omnibus()` has been removed pending a revised numerator definition
+  (the current variance-of-the-summed-contribution numerator overstates the
+  effect when a covariate is correlated with the factor).
+
 # pecanr 0.3.1
  
 ## Bug fixes

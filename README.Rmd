@@ -4,7 +4,6 @@ output: github_document
 # pecanr
 <!-- badges: start -->
 [![CRAN status](https://www.r-pkg.org/badges/version/pecanr)](https://CRAN.R-project.org/package=pecanr)
-[![R-CMD-check](https://github.com/bcohen0901/pecanr/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/bcohen0901/pecanr/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 **pecanr** computes partial eta-squared (eta2p) effect sizes for fixed effects in
@@ -25,6 +24,8 @@ variances to the outcome scale.
 - **Random slopes** -- translated to the outcome scale via sigma^2_slope x sigma^2_X
 - **Operative effect sizes** -- excluding variance components that don't
   contribute to the standard error of the tested effect
+- **Sensitivity / power analysis** -- supply a hypothetical slope and read off
+  the effect size it would imply (e.g. alongside simr)
 
 ## Installation
 
@@ -106,6 +107,24 @@ eta2p(model, effect = "condition", data = my_data,
       design     = "crossed",
       cross_vars = c("subject", "item"),
       operative  = TRUE)
+```
+
+### Sensitivity analysis (a hypothetical slope)
+
+Supply a hypothetical coefficient with `slope =` and `eta2p()` returns the
+effect size it would imply, holding the predictor variance and the error
+structure fixed from the model. Printing the result shows just the estimate;
+`summary()` shows the full breakdown (coefficient, var(X), error components).
+
+``` r
+eta2p(model, effect = "condition", data = my_data,
+      design     = "crossed",
+      cross_vars = c("subject", "item"),
+      slope      = 0.03)
+
+res <- eta2p(model, "condition", my_data,
+             design = "crossed", cross_vars = c("subject", "item"))
+summary(res)
 ```
 
 ## References

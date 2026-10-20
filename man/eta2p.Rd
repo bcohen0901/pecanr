@@ -2,6 +2,8 @@
 % Please edit documentation in R/eta2p.R
 \name{eta2p}
 \alias{eta2p}
+\alias{print.eta2p_lmm}
+\alias{summary.eta2p_lmm}
 \title{Partial Eta-Squared for Linear Mixed Models}
 \usage{
 eta2p(
@@ -15,6 +17,7 @@ eta2p(
   nest_vars = NULL,
   effect_level = NULL,
   var_x = NULL,
+  slope = NULL,
   operative = FALSE,
   partial_predictors = TRUE,
   ci = FALSE,
@@ -23,6 +26,10 @@ eta2p(
   seed = NULL,
   verbose = FALSE
 )
+
+\method{print}{eta2p_lmm}(x, ...)
+
+\method{summary}{eta2p_lmm}(object, ...)
 }
 \arguments{
 \item{model}{A fitted model object from \code{lme4::lmer()}.}
@@ -33,7 +40,6 @@ May be given either as the model coefficient name (e.g.
 \code{"Group"}); a variable name that maps to a single coefficient is
 resolved automatically (with a message). A variable that maps to several
 coefficients (a multi-level factor) raises an informative error pointing to
-\code{eta2p_omnibus()} (for one factor-level value) or
 \code{batch_eta2p()} (for per-coefficient values). Factor predictors and
 factor random slopes are read from the model design matrix / model frame,
 so no manual recoding to numeric is required.}
@@ -70,6 +76,14 @@ interaction product). If supplied, overrides the internal \code{var()}
 calculation from \code{data}. Useful when raw data are unavailable but the
 predictor variance is known (e.g., from design: a +/-1 binary predictor has
 \code{var_x = 1}).}
+
+\item{slope}{Optional numeric. A hypothetical value for the focal effect's
+fixed-effect coefficient, used in place of the fitted coefficient in the
+numerator while the predictor variance and the error structure are held
+fixed from the model. This answers "what effect size would a slope of this
+size imply?" and is useful for sensitivity and power analyses (e.g.
+reporting effect sizes alongside \pkg{simr}). The effect must be present in
+the fitted model. Default \code{NULL} uses the fitted coefficient.}
 
 \item{operative}{Logical. If \code{TRUE}, calculates operative effect size
 (excludes variance components that do not contribute to the SE of the
@@ -108,11 +122,29 @@ on large models before committing to the full count.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints detailed results. Default is
 \code{FALSE}.}
+
+\item{x}{An \code{eta2p_lmm} object.}
+
+\item{...}{Further arguments (ignored).}
+
+\item{object}{An \code{eta2p_lmm} object.}
 }
 \value{
-An object of class \code{"eta2p_lmm"} containing:
+An object of class \code{"eta2p_lmm"}. Printing it shows the estimate
+on one line; \code{summary()} shows the full breakdown. It contains:
 \item{eta2p}{Partial eta-squared value.}
-\item{variance_effect}{Variance explained by the effect.}
+\item{variance_effect}{Variance explained by the effect (numerator).}
+\item{coefficient}{The fixed-effect coefficient used in the numerator (the
+fitted value, or \code{slope} when supplied).}
+\item{coefficient_fitted}{The fitted coefficient (differs from
+\code{coefficient} only when \code{slope} is supplied).}
+\item{slope_override}{The user-supplied \code{slope}, or \code{NULL}.}
+\item{var_x}{The predictor's (total) variance, \eqn{\sigma^2_X}.}
+\item{var_x_unique}{The unique predictor variance entering the numerator
+(\eqn{\sigma^2_X \times} tolerance); equals \code{var_x} unless
+\code{partial_predictors} residualized a correlated predictor.}
+\item{tolerance}{\eqn{\mathrm{var\_x\_unique} / \mathrm{var\_x}} (1 when
+uncorrelated with the other predictors).}
 \item{variance_error}{Error variance (denominator).}
 \item{effect}{Name of the effect.}
 \item{design}{Design type: \code{"crossed"}, \code{"nested"}, or
@@ -265,6 +297,16 @@ an analytic (e.g. noncentral) formula. Set \code{seed} for reproducibility,
 and start with a small \code{n_boot} to gauge runtime on large models.
 }
 }
+\section{Functions}{
+\itemize{
+\item \code{print(eta2p_lmm)}: Concise print method: reports the estimate (and CI, if
+present) on one line. Use \code{summary()} for the full breakdown.
+
+\item \code{summary(eta2p_lmm)}: Comprehensive summary: the estimate plus the numerator
+ingredients (coefficient, var(X), tolerance) and the error variance
+components that make up the denominator.
+
+}}
 \examples{
 \donttest{
 library(lme4)
@@ -279,10 +321,20 @@ crossed_data <- data.frame(
 )
 model_c <- lmer(y ~ condition + (1 | subject) + (1 | item),
                 data = crossed_data)
+res <- eta2p(model_c, "condition", crossed_data,
+             design   = "crossed",
+             subj_var = "subject",
+             item_var = "item")
+res                 # concise: just the estimate
+summary(res)        # full breakdown: coefficient, var(X), error components
+
+#  Sensitivity analysis: the effect size a hypothetical slope would imply,
+#  holding the error structure fixed (useful alongside simr)
 eta2p(model_c, "condition", crossed_data,
       design   = "crossed",
       subj_var = "subject",
-      item_var = "item")
+      item_var = "item",
+      slope    = 0.03)
 
 #  Three crossed factors using cross_vars
 set.seed(42)
@@ -354,12 +406,6 @@ eta2p(model_c, "condition", crossed_data,
       design = "crossed", cross_vars = c("subject", "item"),
       ci = TRUE, n_boot = 200, seed = 1)
 
-#  Omnibus effect size for a multi-level factor
-crossed_data$emo <- factor(rep(c("a", "b", "c", "d"), 30))
-model_e <- lmer(y ~ emo + (1 | subject) + (1 | item), data = crossed_data)
-eta2p_omnibus(model_e, "emo", crossed_data,
-              design = "crossed", cross_vars = c("subject", "item"))
-
 #  All fixed effects at once (per-coefficient)
 batch_eta2p(model_c, crossed_data,
             design = "crossed", cross_vars = c("subject", "item"))
@@ -383,8 +429,6 @@ multilevel models: An integrative framework for defining R-squared measures.
 \doi{10.1037/met0000184}
 }
 \seealso{
-\code{\link{eta2p_omnibus}} for a single factor-level value for a
-multi-df factor or interaction (matching an omnibus \emph{F}/chi-square
-test); \code{\link{batch_eta2p}} to compute per-coefficient values for all
+\code{\link{batch_eta2p}} to compute per-coefficient values for all
 fixed effects at once.
 }

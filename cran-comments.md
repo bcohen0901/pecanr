@@ -1,52 +1,44 @@
-# CRAN submission comments -- pecanr 0.3.1
+# CRAN submission comments -- pecanr 0.4.0
 
-This is a patch release fixing two bugs in the error-variance computation
-that silently inflated effect sizes for common model specifications (see
-Changes below). We are submitting it promptly after discovering the bugs.
+This is a minor release that adds three features to `eta2p()` and removes one
+function (see Changes below). Existing `eta2p()` estimates are unchanged.
 
 ## Test environments
-* Local: macOS Tahoe 26.2, R 4.5.3 (aarch64-apple-darwin20) -- 0 errors, 0 warnings, 0 notes
-* devtools::check_win_devel(): Windows Server, R-devel -- 0 errors, 0 warnings, 0 note
-* rhub::rhub_check(): linux (ubuntu-latest), R-devel -- 0 errors, 0 warnings, 0 notes
-* rhub::rhub_check(): macos-arm64 (macos-latest), R-* -- 0 errors, 0 warnings, 0 notes
-* rhub::rhub_check(): windows (windows-latest), R-* -- 0 errors, 0 warnings, 0 notes
+* Local: macOS, R 4.5.3 (aarch64-apple-darwin20) -- 0 errors, 0 warnings, 0 notes
+  (an "unable to verify current time" note appears only when the check machine
+  is offline and is environmental).
+* win-builder (R-devel) and R-hub (linux, macos-arm64, windows): to be run
+  before submission.
 
-## R CMD CHECK results
-Local and R-hub (linux, macos-arm64, windows): 0 errors | 0 warnings | 0 notes.
-win-builder R-devel: 0 errors | 0 warnings | 0 notes.
+## R CMD check results
+Local: 0 errors | 0 warnings | 0 notes, excluding the environmental
+"unable to verify current time" note on an offline machine.
 
 ## Notes
 
-* On win-builder R-devel, the 0.3.0 CRAN incoming feasibility check flagged:
-  "Possibly misspelled words in DESCRIPTION: df, semipartial". These are not
+* As in prior releases, CRAN's incoming feasibility check may flag "Possibly
+  misspelled words in DESCRIPTION: df, semipartial". These are not
   misspellings: "df" abbreviates degrees of freedom, and "semipartial" is the
   standard statistical term for the variance-explained measure the package
-  computes. The DESCRIPTION text is unchanged in this release, so the same
-  note may appear again.
+  computes.
 
-## Changes since last submission
+## Changes since last release
 
-This release contains only bug fixes and their regression tests; there are no
-API changes.
+This release adds features and removes one function. Existing `eta2p()`
+estimates (general, operative, and interaction effects) are unchanged, verified
+against 0.3.1.
 
-* Fixed a bug in which random-effect terms stored under numeric-suffixed
-  group names were silently dropped from the error variance. lme4 stores
-  multiple random-effect terms for the same grouping factor -- as produced by
-  the double-bar syntax `(x || g)` or by explicit `(1 | g) + (0 + x | g)`
-  terms -- under group names `"g"`, `"g.1"`, `"g.2"`, etc. The error-variance
-  calculators matched only the base name, so components under suffixed names
-  (typically random slopes) were omitted from the denominator, inflating
-  eta2p. Affected all three design calculators (crossed, nested, mixed) and
-  both general and operative effect sizes.
-* Fixed a related bug for nested-syntax grouping terms such as
-  `(1 | photo:model)`: `as.data.frame(VarCorr())` reports the combined group
-  name dot-separated on current lme4 (e.g. `"photo.model"`), so the previous
-  colon-based fallback never matched and the component was silently dropped
-  in nested and mixed designs.
-* Added a regression test suite (`tests/testthat/test-double-bar.R`) that
-  verifies the error variance against a direct hand computation from
-  `VarCorr()` across crossed, nested, and mixed designs for the affected
-  syntaxes, and guards against false group-name matches.
+* `eta2p()` gains a `slope` argument: supply a hypothetical fixed-effect
+  coefficient (e.g. `slope = 0.03`) and the effect size is computed for that
+  slope, holding the predictor variance and the error structure fixed from the
+  model. Useful for sensitivity and power analyses (e.g. alongside simr).
+* The returned `eta2p_lmm` object now also reports the numerator ingredients:
+  `coefficient`, `var_x` (predictor variance), `var_x_unique`, and `tolerance`.
+* Added concise `print()` and comprehensive `summary()` methods for
+  `eta2p_lmm` objects.
+* Removed `eta2p_omnibus()` pending a revised numerator definition (the current
+  variance-of-the-summed-contribution numerator overstates the effect when a
+  covariate is correlated with the factor).
 
 ## Downstream dependencies
 

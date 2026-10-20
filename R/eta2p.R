@@ -10,7 +10,6 @@
 #'   \code{"Group"}); a variable name that maps to a single coefficient is
 #'   resolved automatically (with a message). A variable that maps to several
 #'   coefficients (a multi-level factor) raises an informative error pointing to
-#'   \code{eta2p_omnibus()} (for one factor-level value) or
 #'   \code{batch_eta2p()} (for per-coefficient values). Factor predictors and
 #'   factor random slopes are read from the model design matrix / model frame,
 #'   so no manual recoding to numeric is required.
@@ -39,6 +38,13 @@
 #'   calculation from \code{data}. Useful when raw data are unavailable but the
 #'   predictor variance is known (e.g., from design: a +/-1 binary predictor has
 #'   \code{var_x = 1}).
+#' @param slope Optional numeric. A hypothetical value for the focal effect's
+#'   fixed-effect coefficient, used in place of the fitted coefficient in the
+#'   numerator while the predictor variance and the error structure are held
+#'   fixed from the model. This answers "what effect size would a slope of this
+#'   size imply?" and is useful for sensitivity and power analyses (e.g.
+#'   reporting effect sizes alongside \pkg{simr}). The effect must be present in
+#'   the fitted model. Default \code{NULL} uses the fitted coefficient.
 #' @param operative Logical. If \code{TRUE}, calculates operative effect size
 #'   (excludes variance components that do not contribute to the SE of the
 #'   effect). Default is \code{FALSE}.
@@ -71,9 +77,21 @@
 #' @param verbose Logical. If \code{TRUE}, prints detailed results. Default is
 #'   \code{FALSE}.
 #'
-#' @return An object of class \code{"eta2p_lmm"} containing:
+#' @return An object of class \code{"eta2p_lmm"}. Printing it shows the estimate
+#'   on one line; \code{summary()} shows the full breakdown. It contains:
 #' \item{eta2p}{Partial eta-squared value.}
-#' \item{variance_effect}{Variance explained by the effect.}
+#' \item{variance_effect}{Variance explained by the effect (numerator).}
+#' \item{coefficient}{The fixed-effect coefficient used in the numerator (the
+#'   fitted value, or \code{slope} when supplied).}
+#' \item{coefficient_fitted}{The fitted coefficient (differs from
+#'   \code{coefficient} only when \code{slope} is supplied).}
+#' \item{slope_override}{The user-supplied \code{slope}, or \code{NULL}.}
+#' \item{var_x}{The predictor's (total) variance, \eqn{\sigma^2_X}.}
+#' \item{var_x_unique}{The unique predictor variance entering the numerator
+#'   (\eqn{\sigma^2_X \times} tolerance); equals \code{var_x} unless
+#'   \code{partial_predictors} residualized a correlated predictor.}
+#' \item{tolerance}{\eqn{\mathrm{var\_x\_unique} / \mathrm{var\_x}} (1 when
+#'   uncorrelated with the other predictors).}
 #' \item{variance_error}{Error variance (denominator).}
 #' \item{effect}{Name of the effect.}
 #' \item{design}{Design type: \code{"crossed"}, \code{"nested"}, or
@@ -252,10 +270,20 @@
 #' )
 #' model_c <- lmer(y ~ condition + (1 | subject) + (1 | item),
 #'                 data = crossed_data)
+#' res <- eta2p(model_c, "condition", crossed_data,
+#'              design   = "crossed",
+#'              subj_var = "subject",
+#'              item_var = "item")
+#' res                 # concise: just the estimate
+#' summary(res)        # full breakdown: coefficient, var(X), error components
+#'
+#' #  Sensitivity analysis: the effect size a hypothetical slope would imply,
+#' #  holding the error structure fixed (useful alongside simr)
 #' eta2p(model_c, "condition", crossed_data,
 #'       design   = "crossed",
 #'       subj_var = "subject",
-#'       item_var = "item")
+#'       item_var = "item",
+#'       slope    = 0.03)
 #'
 #' #  Three crossed factors using cross_vars
 #' set.seed(42)
@@ -327,20 +355,12 @@
 #'       design = "crossed", cross_vars = c("subject", "item"),
 #'       ci = TRUE, n_boot = 200, seed = 1)
 #'
-#' #  Omnibus effect size for a multi-level factor
-#' crossed_data$emo <- factor(rep(c("a", "b", "c", "d"), 30))
-#' model_e <- lmer(y ~ emo + (1 | subject) + (1 | item), data = crossed_data)
-#' eta2p_omnibus(model_e, "emo", crossed_data,
-#'               design = "crossed", cross_vars = c("subject", "item"))
-#'
 #' #  All fixed effects at once (per-coefficient)
 #' batch_eta2p(model_c, crossed_data,
 #'             design = "crossed", cross_vars = c("subject", "item"))
 #' }
 #'
-#' @seealso \code{\link{eta2p_omnibus}} for a single factor-level value for a
-#'   multi-df factor or interaction (matching an omnibus \emph{F}/chi-square
-#'   test); \code{\link{batch_eta2p}} to compute per-coefficient values for all
+#' @seealso \code{\link{batch_eta2p}} to compute per-coefficient values for all
 #'   fixed effects at once.
 #'
 #' @importFrom stats model.frame var
@@ -353,6 +373,7 @@ eta2p <- function(model, effect, data,
                   nest_vars    = NULL,
                   effect_level = NULL,
                   var_x        = NULL,
+                  slope        = NULL,
                   operative    = FALSE,
                   partial_predictors = TRUE,
                   ci           = FALSE,
@@ -390,6 +411,12 @@ eta2p <- function(model, effect, data,
   if (!is.null(var_x) &&
       (!is.numeric(var_x) || length(var_x) != 1 || var_x < 0)) {
     stop("'var_x' must be a single non-negative numeric value.")
+  }
+
+  if (!is.null(slope) &&
+      (!is.numeric(slope) || length(slope) != 1 || !is.finite(slope))) {
+    stop("'slope' must be a single finite numeric value (a hypothetical ",
+         "coefficient for the focal effect).")
   }
 
 
@@ -500,7 +527,12 @@ eta2p <- function(model, effect, data,
 
   # VARIANCE EXPLAINED BY THE EFFECT
 
-  B           <- fixed_effects[effect]
+  B_fitted    <- unname(fixed_effects[effect])
+  # A user-supplied `slope` overrides the fitted coefficient in the numerator,
+  # holding the predictor variance and the error structure fixed. This answers
+  # "what effect size would a slope of this size imply?", for sensitivity and
+  # power analyses (e.g. alongside simr).
+  B           <- if (is.null(slope)) B_fitted else slope
   effect_vars <- strsplit(effect, ":")[[1]]
 
   # The model design matrix holds exactly the (possibly contrast-coded,
@@ -578,6 +610,11 @@ eta2p <- function(model, effect, data,
     }
   }
 
+  # Keep the focal predictor's TOTAL variance before any tolerance adjustment,
+  # so the comprehensive output can report var(X), the tolerance, and the unique
+  # variance that actually enters the numerator.
+  sigma2_X_total <- sigma2_X
+
   # OPTIONAL: semipartial (residualized) variance for correlated predictors.
   # When partial_predictors = TRUE, replace sigma2_X (the focal predictor's
   # TOTAL variance) with its UNIQUE variance: the variance remaining after the
@@ -614,6 +651,8 @@ eta2p <- function(model, effect, data,
     # If there are no other predictors, unique == total: sigma2_X unchanged.
   }
 
+  tolerance       <- if (is.finite(sigma2_X_total) && sigma2_X_total > 0)
+                       sigma2_X / sigma2_X_total else NA_real_
   variance_effect <- B^2 * sigma2_X
 
 
@@ -697,6 +736,12 @@ eta2p <- function(model, effect, data,
     output <- list(
       eta2p               = eta2p_val,
       variance_effect     = variance_effect,
+      coefficient         = B,
+      coefficient_fitted  = B_fitted,
+      slope_override      = slope,
+      var_x               = sigma2_X_total,
+      var_x_unique        = sigma2_X,
+      tolerance           = tolerance,
       variance_error      = variance_error,
       effect              = effect,
       design              = design,
@@ -717,6 +762,12 @@ eta2p <- function(model, effect, data,
     output <- list(
       eta2p               = eta2p_val,
       variance_effect     = variance_effect,
+      coefficient         = B,
+      coefficient_fitted  = B_fitted,
+      slope_override      = slope,
+      var_x               = sigma2_X_total,
+      var_x_unique        = sigma2_X,
+      tolerance           = tolerance,
       variance_error      = variance_error,
       effect              = effect,
       design              = design,
@@ -736,6 +787,12 @@ eta2p <- function(model, effect, data,
     output <- list(
       eta2p               = eta2p_val,
       variance_effect     = variance_effect,
+      coefficient         = B,
+      coefficient_fitted  = B_fitted,
+      slope_override      = slope,
+      var_x               = sigma2_X_total,
+      var_x_unique        = sigma2_X,
+      tolerance           = tolerance,
       variance_error      = variance_error,
       effect              = effect,
       design              = design,
@@ -774,6 +831,7 @@ eta2p <- function(model, effect, data,
               nest_vars    = nest_vars,
               effect_level = effect_level,
               var_x        = var_x,
+              slope        = slope,
               operative    = operative,
               partial_predictors = partial_predictors,
               ci           = FALSE,          # prevent recursion
@@ -806,122 +864,62 @@ eta2p <- function(model, effect, data,
     }
   }
 
-  if (verbose) print(output)
+  if (verbose) print(summary(output))
 
   return(output)
 }
 
 
-#' Omnibus (factor-level) Partial Eta-Squared for a Multi-df Effect
-#'
-#' For a multi-level factor or a multi-df interaction, computes a single
-#' factor-level partial eta-squared corresponding to the omnibus test of that
-#' effect (e.g. the chi-square or F test on all of its degrees of freedom),
-#' rather than one value per contrast. The variance attributed to the effect is
-#' the variance of the summed fitted contribution of all the design-matrix
-#' columns belonging to the effect (which correctly includes the covariances
-#' among those columns); the error denominator is the same one eta2p() uses.
-#'
-#' @param model A fitted lme4 model.
-#' @param effect The variable/effect name. For a factor main effect, the bare
-#'   variable name (e.g. "rating_type"). For an interaction, the colon form of
-#'   the term as it appears in the design matrix (e.g. "group:rating_type").
-#' @param data The data frame used to fit the model.
-#' @param ... Passed to eta2p() to obtain the error denominator (design,
-#'   cross_vars, subj_var, item_var, nest_vars, operative, etc.).
-#'
-#' @return An object of class \code{"eta2p_omnibus"}: a list containing
-#' \item{eta2p}{The omnibus (factor-level) partial eta-squared.}
-#' \item{variance_effect}{Variance of the summed fitted contribution of all the
-#'   effect's design-matrix columns (includes covariances among them).}
-#' \item{variance_error}{Error variance denominator (from \code{eta2p()}).}
-#' \item{effect}{The effect name requested.}
-#' \item{coefficients}{The design-matrix column names aggregated.}
-#' \item{n_df}{Number of columns aggregated (the effect's degrees of freedom;
-#'   matches the df of the corresponding omnibus test).}
-#' \item{type}{\code{"omnibus"}.}
-#'
-#' @details
-#' \code{batch_eta2p()} and a per-coefficient call to \code{eta2p()} return one
-#' value per contrast (per design-matrix column). For a multi-level factor or a
-#' multi-df interaction, none of those single values corresponds to the omnibus
-#' test of the whole effect (the \emph{F} or chi-square test on all of its
-#' degrees of freedom). This function fills that gap.
-#'
-#' The omnibus variance explained is computed as the variance of the
-#' \emph{summed} fitted contribution of all the effect's columns,
-#' \eqn{\mathrm{Var}(\sum_j b_j x_j)}, which correctly includes the covariances
-#' among the dummy/contrast columns. Simply adding the per-coefficient
-#' numerators would drop those covariances and is incorrect. The error
-#' denominator is the same one \code{eta2p()} uses, so the result remains a
-#' partial eta-squared (error-variance denominator), \emph{not} a total-variance
-#' \eqn{R^2}; expect it to differ from \code{r2glmm::r2beta()}, which targets the
-#' latter.
-#'
-#' @examples
-#' \donttest{
-#' library(lme4)
-#' set.seed(1)
-#' d <- expand.grid(subject = factor(1:30), item = factor(1:12),
-#'                  emo = factor(c("a", "b", "c", "d")))
-#' d$y <- as.integer(d$emo) + rnorm(30)[d$subject] + rnorm(nrow(d))
-#' m <- lmer(y ~ emo + (1 | subject) + (1 | item), data = d)
-#' # one factor-level value to pair with the omnibus test of `emo`:
-#' eta2p_omnibus(m, "emo", d, design = "crossed",
-#'               cross_vars = c("subject", "item"))
-#' }
-#'
-#' @seealso \code{\link{eta2p}} for single-coefficient values and
-#'   \code{\link{batch_eta2p}} for all coefficients at once.
-#'
+#' @describeIn eta2p Concise print method: reports the estimate (and CI, if
+#'   present) on one line. Use \code{summary()} for the full breakdown.
+#' @param x An \code{eta2p_lmm} object.
+#' @param ... Further arguments (ignored).
 #' @export
-eta2p_omnibus <- function(model, effect, data, ...) {
-  X <- lme4::getME(model, "X")
-  b <- lme4::fixef(model)
-
-  # Identify the design-matrix columns belonging to this effect.
-  if (grepl(":", effect)) {
-    # interaction: match columns whose set of ':'-separated variable stems equals
-    # the requested term's stems (order-independent), so "group:rating_type"
-    # collects group?:rating_type? dummy columns.
-    want <- sort(strsplit(effect, ":")[[1]])
-    col_is_term <- vapply(colnames(X), function(cn) {
-      if (!grepl(":", cn)) return(FALSE)
-      parts <- strsplit(cn, ":")[[1]]
-      # strip trailing factor-level text by matching each requested stem as a prefix
-      all(vapply(want, function(w) any(startsWith(parts, w)), logical(1))) &&
-        length(parts) == length(want)
-    }, logical(1))
-    cols <- colnames(X)[col_is_term]
-  } else {
-    cols <- colnames(X)[startsWith(colnames(X), effect) & !grepl(":", colnames(X))]
-    cols <- setdiff(cols, "(Intercept)")
+print.eta2p_lmm <- function(x, ...) {
+  kind <- if (isTRUE(x$operative)) "operative" else "general"
+  lab  <- if (!is.null(x$slope_override))
+            sprintf(" (slope = %.4g)", x$slope_override) else ""
+  cat(sprintf("Partial eta-squared (%s) for '%s'%s: %.4f\n",
+              kind, x$effect, lab, x$eta2p))
+  if (!is.null(x$ci_lower) && is.finite(x$ci_lower)) {
+    cat(sprintf("  %.0f%% CI [%.4f, %.4f] (%s, %d replicates)\n",
+                100 * x$ci_level, x$ci_lower, x$ci_upper,
+                x$boot_method, x$boot_n))
   }
+  invisible(x)
+}
 
-  if (length(cols) == 0)
-    stop("No design-matrix columns found for effect '", effect, "'. ",
-         "Available columns: ", paste(colnames(X), collapse = ", "))
 
-  # Omnibus variance explained = variance of the summed fitted contribution of
-  # all columns for this effect (includes their covariances).
-  contrib  <- as.numeric(X[, cols, drop = FALSE] %*% b[cols])
-  var_eff  <- stats::var(contrib)
-
-  # Reuse eta2p()'s error denominator (identical across the effect's columns).
-  ref <- eta2p(model, cols[1], data, ..., verbose = FALSE)
-  var_err <- ref$variance_error
-
-  out <- list(
-    eta2p           = var_eff / (var_eff + var_err),
-    variance_effect = var_eff,
-    variance_error  = var_err,
-    effect          = effect,
-    coefficients    = cols,
-    n_df            = length(cols),
-    type            = "omnibus"
-  )
-  class(out) <- c("eta2p_omnibus", "list")
-  out
+#' @describeIn eta2p Comprehensive summary: the estimate plus the numerator
+#'   ingredients (coefficient, var(X), tolerance) and the error variance
+#'   components that make up the denominator.
+#' @param object An \code{eta2p_lmm} object.
+#' @export
+summary.eta2p_lmm <- function(object, ...) {
+  x <- object
+  print.eta2p_lmm(x)
+  cat("\nNumerator (variance explained):", format(x$variance_effect, digits = 5),
+      "\n")
+  cat("  coefficient b   :", format(x$coefficient, digits = 5),
+      if (!is.null(x$slope_override))
+        sprintf(" (user-supplied; fitted was %.4g)", x$coefficient_fitted)
+      else "", "\n")
+  cat("  var(X)          :", format(x$var_x, digits = 5), "\n")
+  if (!is.null(x$tolerance) && is.finite(x$tolerance) &&
+      abs(x$tolerance - 1) > 1e-8) {
+    cat("  tolerance       :", format(x$tolerance, digits = 5),
+        " -> unique var(X):", format(x$var_x_unique, digits = 5), "\n")
+  }
+  cat("\nDenominator error variance:", format(x$variance_error, digits = 5),
+      "\n")
+  comp <- x$variance_components
+  if (!is.null(comp)) {
+    cat("  components:\n")
+    cflat <- unlist(comp)
+    for (nm in names(cflat))
+      cat(sprintf("    %-28s %s\n", nm, format(cflat[[nm]], digits = 5)))
+  }
+  invisible(x)
 }
 
 
@@ -931,8 +929,7 @@ eta2p_omnibus <- function(model, effect, data, ...) {
 #' intercept) in a model, returning one row per model coefficient. For a
 #' multi-level factor or multi-df interaction this yields one value
 #' \emph{per contrast} (per design-matrix column), not a single factor-level
-#' value; for the omnibus effect size of such a term, use
-#' \code{\link{eta2p_omnibus}}.
+#' value.
 #'
 #' @inheritParams eta2p
 #'
